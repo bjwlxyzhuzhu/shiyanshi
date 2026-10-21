@@ -1,11 +1,11 @@
 import type { ChartData } from '@zhian/shared';
 
-const COLORS = ['#1f5f8b', '#c76a00', '#17865f', '#7a4fb3'];
+const COLORS = ['#67D2E3', '#F4B740', '#69CC9E', '#b49cf0'];
 
-export function ChartView({ chart }: { chart: ChartData }) {
+export function ChartView({ chart, xLabel, note }: { chart: ChartData; xLabel?: string; note?: string }) {
   const width = 640;
-  const height = 210;
-  const pad = { left: 44, right: 14, top: 14, bottom: 26 };
+  const height = xLabel ? 230 : 210;
+  const pad = { left: 48, right: 14, top: 16, bottom: xLabel ? 44 : 26 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const all = chart.series.flatMap((series) => series.values);
@@ -26,8 +26,8 @@ export function ChartView({ chart }: { chart: ChartData }) {
           const y = sy(value);
           return (
             <g key={ratio}>
-              <line x1={pad.left} x2={width - pad.right} y1={y} y2={y} stroke="#e4e2da" />
-              <text x={pad.left - 6} y={y + 4} textAnchor="end" fontSize="10" fill="#7b8191">
+              <line x1={pad.left} x2={width - pad.right} y1={y} y2={y} stroke="#2a3e4f" />
+              <text x={pad.left - 6} y={y + 4} textAnchor="end" fontSize="11" fill="#A7BAC9">
                 {value >= 10 ? value.toFixed(0) : value.toFixed(2)}
               </text>
             </g>
@@ -55,7 +55,7 @@ export function ChartView({ chart }: { chart: ChartData }) {
                     />
                   );
                 })}
-                <text x={pad.left + groupW * (index + 0.5)} y={height - 8} textAnchor="middle" fontSize="11" fill="#4a5263">
+                <text x={pad.left + groupW * (index + 0.5)} y={pad.top + plotH + 16} textAnchor="middle" fontSize="11" fill="#c8d6e1">
                   {String(label)}
                 </text>
               </g>
@@ -68,7 +68,7 @@ export function ChartView({ chart }: { chart: ChartData }) {
               <g key={series.name}>
                 <polyline points={points} fill="none" stroke={COLORS[s % COLORS.length]} strokeWidth={2.2} strokeLinejoin="round" />
                 {s === 0 ? chart.x.map((label, index) => (index % step === 0 ? (
-                  <text key={index} x={sx(index)} y={height - 8} textAnchor="middle" fontSize="10" fill="#7b8191">{String(label)}</text>
+                  <text key={index} x={sx(index)} y={pad.top + plotH + 16} textAnchor="middle" fontSize="11" fill="#A7BAC9">{String(label)}</text>
                 ) : null)) : null}
               </g>
             );
@@ -81,16 +81,19 @@ export function ChartView({ chart }: { chart: ChartData }) {
               x2={width - pad.right}
               y1={sy(chart.threshold.value)}
               y2={sy(chart.threshold.value)}
-              stroke="#c23b3b"
+              stroke="#F17872"
               strokeDasharray="5 4"
               strokeWidth={1.5}
             />
-            <text x={width - pad.right} y={sy(chart.threshold.value) - 5} textAnchor="end" fontSize="11" fill="#c23b3b">
+            <text x={width - pad.right} y={sy(chart.threshold.value) - 5} textAnchor="end" fontSize="12" fill="#F17872">
               {chart.threshold.label} {chart.threshold.value}
             </text>
           </g>
         ) : null}
+        {chart.unit ? <text x={6} y={pad.top + 4} fontSize="11" fill="#A7BAC9">{chart.unit}</text> : null}
+        {xLabel ? <text x={pad.left + plotW / 2} y={height - 6} textAnchor="middle" fontSize="12" fill="#A7BAC9">{xLabel}</text> : null}
       </svg>
+      {note ? <figcaption className="chart-note">{note}</figcaption> : null}
       {chart.series.length > 1 ? (
         <figcaption className="chart-legend">
           {chart.series.map((series, s) => (

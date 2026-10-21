@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 5174",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"no tests\""
+    "test": "vitest run"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.3",
@@ -25,6 +25,7 @@
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^4.3.3",
     "typescript": "^5.7.2",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vitest": "^2.1.4"
   }
 }

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { BRAND, DIMENSIONS, SCENARIO } from '@zhian/shared';
+import { BRAND } from '@zhian/shared';
 import { useSessionStore } from '../stores/session';
 
+/** 登录：真实账号验证；背后是同一个三维基地的静止展示镜头 */
 export function Login() {
   const login = useSessionStore((state) => state.login);
   const loading = useSessionStore((state) => state.loading);
@@ -15,46 +16,33 @@ export function Login() {
   };
 
   return (
-    <div className="app-shell" style={{ gridTemplateRows: 'auto 1fr' }}>
-      <div className="hazard" />
-      <div className="login-wrap">
-        <section className="login-hero">
-          <div>
-            <div className="brand">
-              <div className="brand-mark">安</div>
-              <span className="badge" style={{ background: 'transparent', color: '#cfd5e0', borderColor: '#39435a' }}>{BRAND.direction}</span>
-            </div>
-            <h1>{BRAND.name}</h1>
-            <p>{BRAND.fullName}</p>
-            <p style={{ marginTop: 18, fontSize: 13 }}>{SCENARIO.text}</p>
-          </div>
-          <div className="login-stages">
-            {DIMENSIONS.map((dimension, index) => (
-              <div key={dimension.key}><b>0{index + 1}</b>{dimension.label}</div>
-            ))}
-          </div>
-        </section>
-
-        <section className="login-panel">
-          <form className="login-card" onSubmit={submit}>
-            <h2>进入实验</h2>
-            <p>24 步交互 · 约 4 学时 · 自动赋分与能力画像</p>
-            <div className="field">
-              <label htmlFor="username">账号</label>
-              <input id="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="password">密码</label>
-              <input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            </div>
-            <button className="primary" style={{ width: '100%' }} type="submit" disabled={loading || !password}>
-              {loading ? '登录中…' : '开始实验'}
-            </button>
-            {error ? <div className="error">{error}</div> : null}
-            <div className="hint">演示账号见项目 README；正式使用请由管理员分配账号。</div>
-          </form>
-        </section>
-      </div>
+    <div className="login-layer">
+      <header className="login-brand">
+        <span className="brand-mark" aria-hidden>安</span>
+        <strong>{BRAND.name}</strong>
+      </header>
+      <section className="login-hero">
+        <h1>进入实验，守护每一次智能决策</h1>
+        <p className="login-full">{BRAND.fullName}</p>
+        <p className="login-tags">24 步交互 · 五维能力画像 · {BRAND.direction}</p>
+      </section>
+      <form className="login-card" onSubmit={submit} data-block-keys>
+        <h2>进入实验</h2>
+        <div className="field">
+          <label htmlFor="username">账号</label>
+          <input id="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="password">密码</label>
+          <input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
+        </div>
+        <button className="primary block" type="submit" disabled={loading || !password || !username}>
+          {loading ? '登录中…' : '开始实验'}
+        </button>
+        {error ? <div className="error-text" role="alert">{error}</div> : null}
+        <p className="muted small center">请使用管理员分配的账号</p>
+      </form>
+      <p className="login-foot">建议使用键盘与鼠标完成实验；不支持三维时自动切换为 HTML 实验模式</p>
     </div>
   );
 }
