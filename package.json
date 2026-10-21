@@ -1,0 +1,14 @@
+{
+  "name": "zhian",
+  "private": true,
+  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "dev": "concurrently -n web,server -c blue,green \"pnpm --filter @zhian/web dev\" \"pnpm --filter @zhian/server dev\"",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  }
+}
