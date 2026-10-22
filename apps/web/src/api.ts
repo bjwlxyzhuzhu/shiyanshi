@@ -8,6 +8,44 @@ import type {
   User
 } from '@zhian/shared';
 
+export type StepEventType = 'open' | 'interact' | 'pause' | 'resume' | 'close';
+
+export interface IlabIssue {
+  code: string;
+  message: string;
+  stepId?: string;
+}
+
+export interface IlabStatus {
+  bound: boolean;
+  environment?: 'mock' | 'test' | 'production';
+  synthetic?: boolean;
+  originId?: string | null;
+  locked?: boolean;
+  readiness?: {
+    blockers: IlabIssue[];
+    warnings: IlabIssue[];
+    interactionVerified: number;
+    interactionCandidates: number;
+    exportTotal: number;
+    rawTotal: number;
+    scorePolicy: string;
+    scorePolicyConfirmed: boolean;
+  };
+  outbox?: { state: string; attachmentState: string; attempts: number; lastErrorCode: string | null; lastErrorSummary: string | null; updatedAt: string } | null;
+  report?: { id: number; size: number; createdAt: string } | null;
+  budget?: { used: number; limit: number };
+}
+
+export interface IlabSyncResult {
+  ok: boolean;
+  state: string;
+  attachmentState?: string;
+  blockers?: IlabIssue[];
+  warnings?: IlabIssue[];
+  message: string;
+}
+
 export interface ProfileItem {
   key: string;
   label: string;
@@ -77,11 +115,41 @@ export const api = {
       `/experiment/${id}/records`
     ),
 
-  submit: (sessionId: number, payload: StepSubmit) =>
+  submit: (sessionId: number, payload: StepSubmit, requestId?: string) =>
     request<StepResult>(`/experiment/${sessionId}/step/${payload.stepId}`, {
       method: 'POST',
-      body: JSON.stringify({ input: payload.input })
+      body: JSON.stringify({ input: payload.input, requestId })
     }),
+
+  /** 过程事件：服务器以收到时间为准，失败不影响实验操作 */
+  events: (sessionId: number, events: Array<{ stepId: string; type: StepEventType }>) =>
+    request<{ accepted: number }>(`/experiment/${sessionId}/events`, {
+      method: 'POST',
+      body: JSON.stringify({ events }),
+      keepalive: true
+    }),
+
+  ilabBootstrap: () =>
+    request<LoginResponse & { sessionId: number; ilab: { environment: string; synthetic: boolean } }>('/ilab/bootstrap', { method: 'POST', credentials: 'same-origin' }),
+
+  ilabStatus: (sessionId: number) => request<IlabStatus>(`/ilab/sessions/${sessionId}/status`),
+
+  ilabFinalize: (sessionId: number) =>
+    request<IlabSyncResult>(`/ilab/sessions/${sessionId}/finalize`, { method: 'POST', body: JSON.stringify({ confirm: true }) }),
+
+  ilabReconcile: (sessionId: number) => request<IlabSyncResult>(`/ilab/sessions/${sessionId}/reconcile`, { method: 'POST' }),
+
+  ilabRetryAttachment: (sessionId: number) => request<IlabSyncResult>(`/ilab/sessions/${sessionId}/attachment/retry`, { method: 'POST' }),
+
+  ilabMockLaunchUrl: () => request<{ url: string }>('/ilab/mock/launch-url', { method: 'POST', body: JSON.stringify({}) }),
+
+  /** 报告 PDF 需带登录凭据下载，返回 Blob */
+  ilabReportBlob: async (sessionId: number): Promise<Blob> => {
+    const token = getToken();
+    const response = await fetch(`/api/ilab/sessions/${sessionId}/report.pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!response.ok) throw new Error('报告文件尚未生成');
+    return response.blob();
+  },
 
   preview: (stepId: string, input: Record<string, number | string>) =>
     request<{ chart: ChartData | null; preview: string | null }>(`/experiment/preview/${stepId}`, {

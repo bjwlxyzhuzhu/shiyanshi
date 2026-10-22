@@ -1,0 +1,127 @@
+{
+  "status": "teacher_confirmation_required",
+  "warning": "Not runtime-ready. Null means unknown; never substitute fixture duration.",
+  "unit": "seconds",
+  "steps": [
+    {
+      "stepId": "S01",
+      "title": "实验室准入与身份核验",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S02",
+      "title": "实验任务与风险分级",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S03",
+      "title": "安全承诺与应急预案确认",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S04",
+      "title": "机房设备与环境检查",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S05",
+      "title": "数据分类分级",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S06",
+      "title": "个人信息识别与脱敏",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S07",
+      "title": "数据集授权与来源核查",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S08",
+      "title": "训练数据投毒检测",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S09",
+      "title": "训练数据残留清理",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S10",
+      "title": "数据泄露应急演练",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S11",
+      "title": "模型许可与合规核查",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S12",
+      "title": "API 密钥最小权限配置",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S13",
+      "title": "密钥泄露检测与轮换",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S14",
+      "title": "提示注入识别",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S15",
+      "title": "越狱与有害内容处置",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S16",
+      "title": "智能体工具授权与越权拦截",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S17",
+      "title": "偏见与公平性评估",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S18",
+      "title": "GPU 服务器上电流程",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S19",
+      "title": "散热与过温监控",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S20",
+      "title": "过温断电应急处置",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S21",
+      "title": "日志审计与追溯",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S22",
+      "title": "安全事件报告撰写",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S23",
+      "title": "事故复盘与整改",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S24",
+      "title": "实验报告与能力画像",
+      "expectTimeSec": null
+    }
+  ]
+}

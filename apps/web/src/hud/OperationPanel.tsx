@@ -7,6 +7,7 @@ import { continueFrom, returnToWorld } from '../world/actions';
 import { HOTSPOT_BY_ID, STEP_HOTSPOT, ZONE_BY_ID } from '../world/layout';
 import type { TraceHop } from '../world/sceneAdapter';
 import { useWorldStore } from '../world/worldStore';
+import { IlabSyncBlock } from './IlabSync';
 import { Radar } from './Radar';
 
 const HIDDEN = new Set(['chart', 'preview', 'verdicts', 'trace', 'profile']);
@@ -236,6 +237,20 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
   const status = useStepStatus(step);
   const heading = useRef<HTMLHeadingElement>(null);
   const result = results[step.id] ?? null;
+  const track = useSessionStore((state) => state.track);
+  const active = (docked || mode === 'operating') && canSubmit;
+
+  // 过程采集：面板展示可操作的步骤时记“打开/关闭”，页面隐藏/恢复记“暂停/恢复”；时间以服务器为准
+  useEffect(() => {
+    if (!active) return;
+    track(step.id, 'open');
+    const onVisibility = () => track(step.id, document.hidden ? 'pause' : 'resume');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      track(step.id, 'close');
+    };
+  }, [active, step.id, track]);
 
   useEffect(() => {
     if (docked || mode === 'operating') heading.current?.focus({ preventScroll: true });
@@ -327,6 +342,7 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
         ) : null}
         {step.type === 'ai' ? <ReviewBlock step={step} /> : null}
         {step.id === 'S24' ? <ReportBlock /> : null}
+        {step.id === 'S24' ? <IlabSyncBlock /> : null}
 
         {submitError?.stepId === step.id ? (
           <div className="error-box" role="alert">

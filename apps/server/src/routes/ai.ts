@@ -3,7 +3,7 @@ import { BRAND, STEPS, parseList, type AiReviewResponse, type StepInput } from '
 import { buildProfile } from '@zhian/scoring';
 import { authRequired, type AuthedRequest } from '../auth.js';
 import { db, nowIso } from '../db.js';
-import { callModel } from '../ai/client.js';
+import { callModelAudited, markParse } from '../ilab/aiAudit.js';
 
 export const aiRouter = Router();
 
@@ -57,8 +57,17 @@ function parseRisks(text: string | null): Risk[] | null {
 aiRouter.post('/review', authRequired, async (req: AuthedRequest, res) => {
   const stepId = String(req.body?.stepId ?? '');
   const input = (req.body?.input ?? {}) as StepInput;
-  const sessionId = req.body?.sessionId ? Number(req.body.sessionId) : null;
+  const requestedSession = req.body?.sessionId ? Number(req.body.sessionId) : null;
+  // 只把调用记到当前用户自己的会话上，避免伪造他人会话的 AI 计数
+  const owned = requestedSession
+    ? db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(requestedSession, req.user!.id) as { id: number } | undefined
+    : undefined;
+  const sessionId = owned ? owned.id : null;
   const step = STEPS.find((item) => item.id === stepId);
+  if (!step || step.type !== 'ai') {
+    res.status(400).json({ code: 'BAD_STEP', message: '该步骤不提供安全助手评审' });
+    return;
+  }
   const startedAt = Date.now();
 
   const prompt = [
@@ -69,17 +78,20 @@ aiRouter.post('/review', authRequired, async (req: AuthedRequest, res) => {
     '格式：{"risks":[{"level":"high|mid|low","item":"...","reason":"..."}]}'
   ].join('\n');
 
-  const modelRisks = parseRisks(await callModel([
+  const call = await callModelAudited([
     { role: 'system', content: '你只输出合法 JSON，不输出任何个人信息。' },
     { role: 'user', content: prompt }
-  ]));
+  ], { sessionId, userId: req.user!.id, stepId, scenario: `review:${stepId}` });
+  const modelRisks = parseRisks(call.text);
   const risks = modelRisks ?? ruleReview(stepId, input);
   const source: AiReviewResponse['source'] = modelRisks ? 'model' : 'rule';
+  // 收到响应但解析失败时仍保留“已调用”的审计事件，只是最终采用规则结果
+  markParse(call.invocationId, Boolean(modelRisks), source);
 
   db.prepare(`
-    INSERT INTO ai_logs (session_id, agent, model, prompt_hash, response, latency_ms, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(sessionId, `review:${stepId}`, process.env.AI_MODEL ?? null, `len:${prompt.length}`, JSON.stringify(risks), Date.now() - startedAt, nowIso());
+    INSERT INTO ai_logs (session_id, agent, model, prompt_hash, response, latency_ms, created_at, invocation_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(sessionId, `review:${stepId}`, call.dispatched ? process.env.AI_MODEL ?? null : null, `len:${prompt.length}`, JSON.stringify(risks), Date.now() - startedAt, nowIso(), call.invocationId);
 
   const payload: AiReviewResponse = { risks, source };
   res.json(payload);

@@ -524,3 +524,17 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .panel-dock { transition: none; }
 }
+
+/* ---------- 实验空间同步 ---------- */
+.ilab-block { margin-top: 16px; padding: 14px 16px; border-radius: 12px; border: 1px solid #2f6e7a; background: #0f1a24; }
+.ilab-block header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.ilab-block h3 { margin: 0; font-size: 17px; }
+.source-chip.warn { border-color: var(--amber); color: var(--amber); }
+.issue-list { margin: 10px 0; padding: 10px 12px; border-radius: 8px; background: #0c1620; border: 1px solid var(--border-soft); font-size: 14px; }
+.issue-list.bad { border-color: var(--danger); }
+.issue-list ul { margin: 6px 0 0; padding-left: 18px; }
+.issue-list li { margin: 4px 0; }
+.issue-list summary { cursor: pointer; color: var(--muted); }
+.ok-text { color: var(--success); font-size: 14px; margin: 8px 0 0; }
+.ilab-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.ilab-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--amber); color: var(--amber); white-space: nowrap; }

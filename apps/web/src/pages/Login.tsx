@@ -1,9 +1,20 @@
 import { useState } from 'react';
 import { BRAND } from '@zhian/shared';
+import { api } from '../api';
 import { useSessionStore } from '../stores/session';
 
+const ILAB_ERRORS: Record<string, string> = {
+  missing_ticket: '没有收到实验空间的登录票据。',
+  ticket_expired: '实验空间登录票据已过期（约 2 分钟有效）。',
+  ticket_invalid: '实验空间登录票据无效。',
+  ticket_replayed: '该登录票据已被使用过。',
+  bad_signature: '实验空间签名校验失败，请联系管理员检查服务器配置。',
+  exchange_unavailable: '暂时无法连接实验空间（外连未开启或网络不可用）。',
+  handoff_invalid: '实验空间登录信息已失效。'
+};
+
 /** 登录：真实账号验证；背后是同一个三维基地的静止展示镜头 */
-export function Login() {
+export function Login({ ilabError = null }: { ilabError?: string | null }) {
   const login = useSessionStore((state) => state.login);
   const loading = useSessionStore((state) => state.loading);
   const error = useSessionStore((state) => state.error);
@@ -40,6 +51,22 @@ export function Login() {
           {loading ? '登录中…' : '开始实验'}
         </button>
         {error ? <div className="error-text" role="alert">{error}</div> : null}
+        {ilabError ? (
+          <div className="error-text" role="alert">
+            {ILAB_ERRORS[ilabError] ?? `实验空间登录失败（${ilabError}）。`}请回到实验空间点击“我要做实验”重新进入；本地账号练习不受影响。
+          </div>
+        ) : null}
+        {import.meta.env.DEV ? (
+          <button
+            type="button"
+            className="ghost block"
+            onClick={() => {
+              void api.ilabMockLaunchUrl().then(({ url }) => { window.location.href = url; }).catch(() => undefined);
+            }}
+          >
+            模拟从实验空间进入（仅开发 · 合成数据）
+          </button>
+        ) : null}
         <p className="muted small center">请使用管理员分配的账号</p>
       </form>
       <p className="login-foot">建议使用键盘与鼠标完成实验；不支持三维时自动切换为 HTML 实验模式</p>

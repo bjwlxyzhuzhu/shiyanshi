@@ -11,7 +11,7 @@ import {
   type StepResult,
   type User
 } from '@zhian/shared';
-import { api, getStoredUser, getToken, setAuth, type ProfileItem } from '../api';
+import { api, getStoredUser, getToken, setAuth, type IlabStatus, type IlabSyncResult, type ProfileItem, type StepEventType } from '../api';
 
 type Input = Record<string, number | string>;
 
@@ -22,6 +22,15 @@ export const PREVIEW_STEPS = new Set(['S06', 'S08', 'S13', 'S17', 'S19', 'S21'])
 
 let starting: Promise<void> | null = null;
 const previewTimers = new Map<string, number>();
+const lastInteract = new Map<string, number>();
+
+function newRequestId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  }
+}
 
 function readSessionId(): number | null {
   try {
@@ -81,6 +90,9 @@ interface SessionStore {
   previews: Record<string, PreviewState>;
   reviews: Record<string, AsyncState<AiReviewResponse>>;
   report: AsyncState<{ reportId: number; contentMd: string; profile: ProfileItem[] }>;
+  /** 实验空间绑定与回传状态（本地练习时 bound=false） */
+  ilab: IlabStatus | null;
+  ilabSync: AsyncState<IlabSyncResult>;
   loading: boolean;
   submitting: string | null;
   submitError: { stepId: string; message: string } | null;
@@ -100,6 +112,12 @@ interface SessionStore {
   runReport: () => Promise<void>;
   reset: () => Promise<void>;
   clearError: () => void;
+  track: (stepId: string, type: StepEventType) => void;
+  refreshIlab: () => Promise<void>;
+  bootstrapIlab: () => Promise<boolean>;
+  finalizeIlab: () => Promise<void>;
+  reconcileIlab: () => Promise<void>;
+  retryIlabAttachment: () => Promise<void>;
 }
 
 const idle = <T,>(): AsyncState<T> => ({ status: 'idle', data: null, error: null });
@@ -115,6 +133,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   previews: {},
   reviews: {},
   report: idle(),
+  ilab: null,
+  ilabSync: idle(),
   loading: false,
   submitting: null,
   submitError: null,
@@ -127,7 +147,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       const data = await api.login(username, password);
       setAuth(data.token, data.user);
-      set({ token: data.token, user: data.user, loading: false, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle() });
+      set({ token: data.token, user: data.user, loading: false, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle() });
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : '登录失败' });
     }
@@ -136,7 +156,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   logout: () => {
     setAuth(null, null);
     writeSessionId(null);
-    set({ token: null, user: null, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), error: null, submitError: null, viewStepId: 'S01' });
+    set({ token: null, user: null, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle(), error: null, submitError: null, viewStepId: 'S01' });
   },
 
   start: () => {
@@ -171,12 +191,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             };
           }
           set({ session: resumed, viewStepId: resumed.currentStepId, inputs, results, submitted, loading: false });
+          void get().refreshIlab();
           return;
         }
       }
       const session = await api.start();
       writeSessionId(session.sessionId);
       set({ session, viewStepId: session.currentStepId, loading: false, results: {}, inputs: {}, submitted: {}, previews: {}, reviews: {}, report: idle() });
+      void get().refreshIlab();
     } catch (error) {
       const message = error instanceof Error ? error.message : '无法开始实验';
       if (message.includes('登录')) get().logout();
@@ -197,6 +219,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (!get().canSubmit(stepId)) return;
     const current = get().inputFor(stepId);
     set({ inputs: { ...get().inputs, [stepId]: { ...current, [key]: value } } });
+    get().track(stepId, 'interact');
     if (PREVIEW_STEPS.has(stepId)) get().requestPreview(stepId);
   },
 
@@ -210,8 +233,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
    * 服务端重提历史步骤会把 current_step_id 拉回，所以其他历史步骤一律只读回看。
    */
   canSubmit: (stepId) => {
-    const { session, results } = get();
-    if (!session) return false;
+    const { session, results, ilab } = get();
+    if (!session || ilab?.locked) return false;
     if (stepId === session.currentStepId) return true;
     return Boolean(results[stepId]) && nextStepId(stepId) === session.currentStepId && !results[session.currentStepId];
   },
@@ -223,7 +246,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const hash = inputHash(input);
     set({ submitting: stepId, submitError: null });
     try {
-      const result = await api.submit(session.sessionId, { stepId, input });
+      // 每次点击一个 requestId：网络重发同一请求时服务端不会重复计一次尝试
+      const result = await api.submit(session.sessionId, { stepId, input }, newRequestId());
       const updated = await api.session(session.sessionId);
       set({
         session: updated,
@@ -231,6 +255,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         submitted: { ...get().submitted, [stepId]: hash },
         submitting: null
       });
+      void get().refreshIlab();
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '提交失败';
@@ -313,10 +338,88 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const updated = await api.reset(session.sessionId);
-      set({ session: updated, results: {}, inputs: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), viewStepId: 'S01', loading: false });
+      // 绑定实验空间的会话不清空：服务端返回一个新会话（新的记录编号）
+      if (updated.sessionId !== session.sessionId) writeSessionId(updated.sessionId);
+      set({ session: updated, results: {}, inputs: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilabSync: idle(), viewStepId: 'S01', loading: false });
+      void get().refreshIlab();
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : '重置失败' });
     }
+  },
+
+  track: (stepId, type) => {
+    const { session, ilab } = get();
+    if (!session || ilab?.locked) return;
+    if (type === 'interact') {
+      // 输入改动限频：每步 3 秒内最多报一次，不逐键/逐帧写库
+      const key = `${session.sessionId}:${stepId}`;
+      const now = Date.now();
+      if (now - (lastInteract.get(key) ?? 0) < 3000) return;
+      lastInteract.set(key, now);
+    }
+    api.events(session.sessionId, [{ stepId, type }]).catch(() => undefined);
+  },
+
+  refreshIlab: async () => {
+    const session = get().session;
+    if (!session) return;
+    try {
+      const status = await api.ilabStatus(session.sessionId);
+      if (get().session?.sessionId === session.sessionId) set({ ilab: status });
+    } catch {
+      // 状态获取失败不影响实验；同步面板会显示重试
+    }
+  },
+
+  bootstrapIlab: async () => {
+    set({ loading: true, error: null });
+    try {
+      const data = await api.ilabBootstrap();
+      setAuth(data.token, data.user);
+      writeSessionId(data.sessionId);
+      set({ token: data.token, user: data.user, loading: false, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle() });
+      return true;
+    } catch (error) {
+      set({ loading: false, error: error instanceof Error ? error.message : '实验空间登录失败，请重新进入' });
+      return false;
+    }
+  },
+
+  finalizeIlab: async () => {
+    const session = get().session;
+    if (!session || get().ilabSync.status === 'loading') return;
+    set({ ilabSync: { status: 'loading', data: null, error: null } });
+    try {
+      const data = await api.ilabFinalize(session.sessionId);
+      set({ ilabSync: { status: 'ok', data, error: null } });
+    } catch (error) {
+      set({ ilabSync: { status: 'error', data: null, error: error instanceof Error ? error.message : '提交失败' } });
+    }
+    await get().refreshIlab();
+  },
+
+  reconcileIlab: async () => {
+    const session = get().session;
+    if (!session) return;
+    set({ ilabSync: { status: 'loading', data: null, error: null } });
+    try {
+      set({ ilabSync: { status: 'ok', data: await api.ilabReconcile(session.sessionId), error: null } });
+    } catch (error) {
+      set({ ilabSync: { status: 'error', data: null, error: error instanceof Error ? error.message : '对账失败' } });
+    }
+    await get().refreshIlab();
+  },
+
+  retryIlabAttachment: async () => {
+    const session = get().session;
+    if (!session) return;
+    set({ ilabSync: { status: 'loading', data: null, error: null } });
+    try {
+      set({ ilabSync: { status: 'ok', data: await api.ilabRetryAttachment(session.sessionId), error: null } });
+    } catch (error) {
+      set({ ilabSync: { status: 'error', data: null, error: error instanceof Error ? error.message : '附件上传失败' } });
+    }
+    await get().refreshIlab();
   }
 }));
 

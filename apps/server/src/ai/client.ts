@@ -1,30 +1,17 @@
-export interface ChatMessage {
-  role: 'system' | 'user';
-  content: string;
-}
+import { callModelAudited, type ChatMessage } from '../ilab/aiAudit.js';
 
-export async function callModel(messages: ChatMessage[]): Promise<string | null> {
-  const base = process.env.AI_BASE_URL;
-  const key = process.env.AI_API_KEY;
-  const model = process.env.AI_MODEL;
-  if (!base || !key || !model) return null;
+export type { ChatMessage };
 
-  try {
-    const response = await fetch(`${base.replace(/\/$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`
-      },
-      body: JSON.stringify({ model, messages, temperature: 0.2 }),
-      signal: AbortSignal.timeout(5000)
-    });
-    if (!response.ok) return null;
-    const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return data.choices?.[0]?.message?.content ?? null;
-  } catch {
-    return null;
-  }
+/**
+ * 兼容旧调用方式：只返回文本。实际请求、响应、错误与 usage 由 callModelAudited 写入 ai_invocations。
+ * 未配置模型时不会发出请求，审计记为 not_configured（不计入 AI 调用次数）。
+ */
+export async function callModel(messages: ChatMessage[], context: { sessionId?: number | null; userId?: number | null; stepId?: string; scenario?: string } = {}): Promise<string | null> {
+  const result = await callModelAudited(messages, {
+    sessionId: context.sessionId ?? null,
+    userId: context.userId ?? null,
+    stepId: context.stepId ?? '',
+    scenario: context.scenario ?? 'unspecified'
+  });
+  return result.text;
 }

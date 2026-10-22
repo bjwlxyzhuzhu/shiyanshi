@@ -14,7 +14,8 @@ export function authRequired(req: AuthedRequest, res: Response, next: NextFuncti
     return;
   }
   const row = db
-    .prepare('SELECT u.id, u.username, u.role FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.token = ?')
+    // 外部身份用户的 username 是内部键，对外展示显示名
+    .prepare('SELECT u.id, COALESCE(u.display_name, u.username) AS username, u.role FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.token = ?')
     .get(token) as { id: number; username: string; role: User['role'] } | undefined;
   if (!row) {
     res.status(401).json({ code: 'BAD_TOKEN', message: '登录已失效' });

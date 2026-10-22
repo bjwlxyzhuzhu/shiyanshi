@@ -17,7 +17,23 @@ export function App() {
   const htmlMode = useWorldStore((state) => state.htmlMode);
   const setHtmlMode = useWorldStore((state) => state.setHtmlMode);
   const [webgl] = useState(() => webglSupported());
+  const [ilabError, setIlabError] = useState<string | null>(null);
   const scene = useSceneState();
+
+  // 实验空间入口：后端换票后 303 到 ?ilab=1（不含 ticket），这里用一次性 handoff 建立本系统登录
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const clean = () => window.history.replaceState(null, '', window.location.pathname);
+    if (params.get('ilab') === '1') {
+      clean();
+      void useSessionStore.getState().bootstrapIlab().then((ok) => {
+        if (!ok) setIlabError('handoff_invalid');
+      });
+    } else if (params.get('ilab_error')) {
+      setIlabError(params.get('ilab_error'));
+      clean();
+    }
+  }, []);
 
   useEffect(() => {
     installInput();
@@ -45,7 +61,7 @@ export function App() {
       ) : (
         <div className="backdrop-static" aria-hidden />
       )}
-      {token ? <Experiment scene={scene} /> : <Login />}
+      {token ? <Experiment scene={scene} /> : <Login ilabError={ilabError} />}
     </div>
   );
 }

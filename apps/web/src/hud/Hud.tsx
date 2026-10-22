@@ -8,6 +8,7 @@ import { perf, useWorldStore, type Quality } from '../world/worldStore';
 
 export function TopBar({ scene }: { scene: SceneState }) {
   const session = useSessionStore((state) => state.session);
+  const ilab = useSessionStore((state) => state.ilab);
   const step = session ? getStep(session.currentStepId) : null;
   return (
     <header className="hud-top">
@@ -17,6 +18,11 @@ export function TopBar({ scene }: { scene: SceneState }) {
         {step ? (
           <span className="hud-crumb">
             {step.stage} · {step.id} / 24{session?.finished ? ' · 已完成全部提交' : ''}
+          </span>
+        ) : null}
+        {ilab?.bound ? (
+          <span className="ilab-chip" title="本次实验由实验空间进入，完成后在 S24 提交">
+            实验空间{ilab.synthetic ? ' · 模拟' : ''}{ilab.locked ? ' · 已提交只读' : ''}
           </span>
         ) : null}
       </div>

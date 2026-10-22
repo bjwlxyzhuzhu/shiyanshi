@@ -3,6 +3,11 @@ import { getStep, nextStepId, STEPS, type SessionState, type StepInput } from '@
 import { buildProfile, evaluateStep } from '@zhian/scoring';
 import { authRequired, type AuthedRequest } from '../auth.js';
 import { db, nowIso } from '../db.js';
+import { ilabConfig } from '../ilab/config.js';
+import { latestContextForUser } from '../ilab/identity.js';
+import { createBoundSession } from '../ilab/routes.js';
+import { EVENT_TYPES, attemptByRequest, recordAttempt, recordEvent, type StepEventType } from '../ilab/telemetry.js';
+import { sha256Hex } from '../ilab/signature.js';
 
 export const experimentRouter = Router();
 
@@ -12,6 +17,8 @@ interface SessionRow {
   total_score: number;
   current_step_id: string;
   finished_at: string | null;
+  locked: number;
+  ilab_context_id: number | null;
 }
 
 interface RecordRow {
@@ -29,7 +36,7 @@ function records(sessionId: number): Array<{ stepId: string; score: number; maxS
 
 function findSession(sessionId: number, userId: number): SessionRow | undefined {
   return db
-    .prepare('SELECT id, user_id, total_score, current_step_id, finished_at FROM sessions WHERE id = ? AND user_id = ?')
+    .prepare('SELECT id, user_id, total_score, current_step_id, finished_at, locked, ilab_context_id FROM sessions WHERE id = ? AND user_id = ?')
     .get(sessionId, userId) as SessionRow | undefined;
 }
 
@@ -60,12 +67,48 @@ experimentRouter.post('/preview/:stepId', authRequired, (req, res) => {
   res.json({ chart: result.chart ?? null, preview: result.preview ?? null });
 });
 
+/** 从实验空间进入的用户：新会话绑定其当前环境的外部上下文；本地账号行为不变 */
+function boundContextFor(userId: number): number | null {
+  const context = latestContextForUser(userId);
+  return context && context.environment === ilabConfig().mode ? context.id : null;
+}
+
 experimentRouter.post('/start', authRequired, (req: AuthedRequest, res) => {
   const user = req.user!;
-  const info = db
-    .prepare('INSERT INTO sessions (user_id, started_at, current_step_id) VALUES (?, ?, ?)')
-    .run(user.id, nowIso(), 'S01');
-  res.json(loadSession(Number(info.lastInsertRowid), user.id));
+  const contextId = boundContextFor(user.id);
+  const sessionId = contextId
+    ? createBoundSession(user.id, contextId)
+    : Number(db
+      .prepare('INSERT INTO sessions (user_id, started_at, current_step_id, started_ms) VALUES (?, ?, ?, ?)')
+      .run(user.id, nowIso(), 'S01', Date.now()).lastInsertRowid);
+  res.json(loadSession(sessionId, user.id));
+});
+
+/**
+ * 过程事件：打开/关闭设备面板、首次改动输入（前端限频）、页面隐藏/恢复。
+ * 时间以服务器收到为准；不逐帧上报。已锁定（已回传）的会话不再记录。
+ */
+experimentRouter.post('/:id/events', authRequired, (req: AuthedRequest, res) => {
+  const session = findSession(Number(req.params.id), req.user!.id);
+  if (!session) {
+    res.status(404).json({ code: 'NO_SESSION', message: '实验会话不存在' });
+    return;
+  }
+  if (session.locked) {
+    res.status(409).json({ code: 'LOCKED', message: '该实验记录已提交到实验空间，只读' });
+    return;
+  }
+  const events = Array.isArray(req.body?.events) ? (req.body.events as Array<{ stepId?: unknown; type?: unknown }>).slice(0, 20) : [];
+  let accepted = 0;
+  const now = Date.now();
+  for (const event of events) {
+    const stepId = String(event.stepId ?? '');
+    const type = String(event.type ?? '') as StepEventType;
+    if (!getStep(stepId) || !(EVENT_TYPES as readonly string[]).includes(type)) continue;
+    recordEvent(session.id, stepId, type, now);
+    accepted += 1;
+  }
+  res.json({ accepted });
 });
 
 /** 恢复进度：返回每一步的输入、结果与反馈，刷新页面后可继续实验。 */
@@ -105,8 +148,19 @@ experimentRouter.get('/:id', authRequired, (req: AuthedRequest, res) => {
 experimentRouter.post('/:id/reset', authRequired, (req: AuthedRequest, res) => {
   const user = req.user!;
   const sessionId = Number(req.params.id);
-  if (!findSession(sessionId, user.id)) {
+  const existing = findSession(sessionId, user.id);
+  if (!existing) {
     res.status(404).json({ code: 'NO_SESSION', message: '实验会话不存在' });
+    return;
+  }
+  // 绑定实验空间的会话不清空历史证据：重做时创建新的真实会话与新 originId
+  if (existing.ilab_context_id) {
+    const contextId = boundContextFor(user.id);
+    if (!contextId) {
+      res.status(409).json({ code: 'REENTRY_REQUIRED', message: '请从实验空间重新进入后开始新的实验' });
+      return;
+    }
+    res.json(loadSession(createBoundSession(user.id, contextId), user.id));
     return;
   }
   db.prepare('DELETE FROM step_records WHERE session_id = ?').run(sessionId);
@@ -129,7 +183,21 @@ experimentRouter.post('/:id/step/:stepId', authRequired, (req: AuthedRequest, re
     return;
   }
 
+  if (session.locked) {
+    res.status(409).json({ code: 'LOCKED', message: '该实验记录已提交到实验空间，只读；如需重做请开始新的实验' });
+    return;
+  }
+
   const input = (req.body?.input ?? {}) as StepInput;
+  const requestId = typeof req.body?.requestId === 'string' && /^[\w-]{8,64}$/.test(req.body.requestId) ? req.body.requestId as string : null;
+  // 幂等：同一 requestId 的重复请求直接返回首次结果，不增加尝试次数
+  if (requestId) {
+    const previous = attemptByRequest(sessionId, requestId);
+    if (previous) {
+      res.json(JSON.parse(previous.result_json));
+      return;
+    }
+  }
   const startedAt = Date.now();
   const evaluation = evaluateStep(stepId, input);
   const score = Number((step.maxScore * evaluation.ratio).toFixed(1));
@@ -158,5 +226,17 @@ experimentRouter.post('/:id/step/:stepId', authRequired, (req: AuthedRequest, re
   db.prepare('UPDATE sessions SET total_score = ?, current_step_id = ?, finished_at = ? WHERE id = ?')
     .run(totalScore, next ?? stepId, finished ? nowIso() : null, sessionId);
 
-  res.json({ stepId, score, maxScore: step.maxScore, result, feedback: evaluation.feedback, nextStepId: next });
+  const response = { stepId, score, maxScore: step.maxScore, result, feedback: evaluation.feedback, nextStepId: next };
+  // 追加式尝试记录：起止来自服务器观测的过程事件；duration_ms 只是判分耗时，不作为学习用时
+  recordAttempt({
+    sessionId,
+    stepId,
+    requestId,
+    submitMs: startedAt,
+    inputHash: sha256Hex(JSON.stringify(input)),
+    rawScore: score,
+    rawMaxScore: step.maxScore,
+    resultJson: JSON.stringify(response)
+  });
+  res.json(response);
 });

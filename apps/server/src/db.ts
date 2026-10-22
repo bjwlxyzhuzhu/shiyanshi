@@ -1,12 +1,16 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { createRequire } from 'node:module';
+import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
+import { migrate } from './ilab/migrate.js';
 
 const dbPath = process.env.DB_PATH ?? resolve(process.cwd(), 'data/zhian.sqlite');
 mkdirSync(dirname(dbPath), { recursive: true });
 
-export const db = new DatabaseSync(dbPath);
+// 用 createRequire 加载内置 node:sqlite：运行时与 tsx 相同，同时避免测试打包器把前缀去掉
+const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
+export const db: DatabaseSyncType = new DatabaseSync(dbPath);
 
 db.exec('PRAGMA journal_mode = WAL;');
 
@@ -107,6 +111,7 @@ function seed(): void {
 }
 
 seed();
+migrate(db);
 
 export function nowIso(): string {
   return new Date().toISOString();

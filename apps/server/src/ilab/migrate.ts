@@ -1,0 +1,176 @@
+import type { DatabaseSync } from 'node:sqlite';
+
+/**
+ * 非破坏性迁移：只新建表与追加列，不 DROP、不清空、不改写既有记录。
+ * 回退：新增表与列不被旧代码读取，回退到旧版本代码即可；如需清理可手工删除新增表。
+ */
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === column);
+}
+
+function addColumn(db: DatabaseSync, table: string, column: string, definition: string): void {
+  if (!hasColumn(db, table, column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+export function migrate(db: DatabaseSync): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`);
+  const applied = new Set((db.prepare('SELECT version FROM schema_version').all() as Array<{ version: number }>).map((row) => row.version));
+
+  if (!applied.has(1)) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS external_identities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        appid TEXT NOT NULL,
+        un TEXT NOT NULL,
+        dis TEXT,
+        user_id INTEGER NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        UNIQUE (provider, environment, appid, un)
+      );
+
+      CREATE TABLE IF NOT EXISTS ilab_contexts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        identity_id INTEGER NOT NULL,
+        environment TEXT NOT NULL,
+        appid TEXT NOT NULL,
+        un TEXT NOT NULL,
+        original_token_enc TEXT NOT NULL,
+        current_token_enc TEXT NOT NULL,
+        create_time_ms INTEGER,
+        expires_time_ms INTEGER,
+        refresh_count INTEGER NOT NULL DEFAULT 0,
+        synthetic INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS ilab_handoffs (
+        code_hash TEXT PRIMARY KEY,
+        context_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        expires_ms INTEGER NOT NULL,
+        used_at_ms INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS ilab_ticket_digests (
+        digest TEXT PRIMARY KEY,
+        seen_ms INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS ilab_call_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        context_id INTEGER NOT NULL,
+        endpoint TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        at_ms INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS step_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        step_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        server_ms INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_step_events_session ON step_events (session_id, step_id, id);
+
+      CREATE TABLE IF NOT EXISTS step_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        step_id TEXT NOT NULL,
+        attempt_no INTEGER NOT NULL,
+        request_id TEXT,
+        observed_start_ms INTEGER,
+        observed_end_ms INTEGER NOT NULL,
+        active_ms INTEGER,
+        interaction_count INTEGER NOT NULL DEFAULT 0,
+        input_hash TEXT NOT NULL,
+        raw_score REAL NOT NULL,
+        raw_max_score REAL NOT NULL,
+        evidence_quality TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (session_id, request_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_step_attempts_session ON step_attempts (session_id, step_id, attempt_no);
+
+      CREATE TABLE IF NOT EXISTS ai_invocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invocation_id TEXT NOT NULL,
+        attempt_no INTEGER NOT NULL,
+        session_id INTEGER,
+        user_id INTEGER,
+        step_id TEXT,
+        scenario TEXT,
+        dispatch_state TEXT NOT NULL,
+        upstream_http_status INTEGER,
+        provider_response_received INTEGER NOT NULL DEFAULT 0,
+        configured_model TEXT,
+        provider_model TEXT,
+        configured_version TEXT,
+        deployment TEXT,
+        provider TEXT,
+        prompt_tokens INTEGER,
+        completion_tokens INTEGER,
+        usage_complete INTEGER NOT NULL DEFAULT 0,
+        parse_ok INTEGER,
+        final_source TEXT,
+        failure_class TEXT,
+        prompt_sha256 TEXT,
+        started_ms INTEGER NOT NULL,
+        ended_ms INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_invocations_session ON ai_invocations (session_id);
+
+      CREATE TABLE IF NOT EXISTS ilab_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        filename TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        bytes BLOB NOT NULL,
+        sha256 TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS ilab_outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        context_id INTEGER NOT NULL,
+        environment TEXT NOT NULL,
+        appid TEXT NOT NULL,
+        username TEXT NOT NULL,
+        origin_id TEXT NOT NULL,
+        status_value INTEGER NOT NULL,
+        payload_version INTEGER NOT NULL,
+        payload_json TEXT NOT NULL,
+        payload_sha256 TEXT NOT NULL,
+        export_audit_json TEXT NOT NULL,
+        state TEXT NOT NULL,
+        attachment_state TEXT NOT NULL DEFAULT 'none',
+        report_id INTEGER,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error_code TEXT,
+        last_error_summary TEXT,
+        synthetic INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ilab_outbox_session ON ilab_outbox (session_id, id);
+    `);
+
+    addColumn(db, 'users', 'display_name', 'TEXT');
+    addColumn(db, 'users', 'external', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn(db, 'sessions', 'source', "TEXT NOT NULL DEFAULT 'local'");
+    addColumn(db, 'sessions', 'ilab_context_id', 'INTEGER');
+    addColumn(db, 'sessions', 'origin_id', 'TEXT');
+    addColumn(db, 'sessions', 'started_ms', 'INTEGER');
+    addColumn(db, 'sessions', 'completed_ms', 'INTEGER');
+    addColumn(db, 'sessions', 'locked', 'INTEGER NOT NULL DEFAULT 0');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_origin ON sessions (origin_id) WHERE origin_id IS NOT NULL');
+    addColumn(db, 'ai_logs', 'invocation_id', 'TEXT');
+    db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(1, new Date().toISOString());
+  }
+}
