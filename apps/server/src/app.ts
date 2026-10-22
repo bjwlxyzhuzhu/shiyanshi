@@ -5,6 +5,9 @@ import { redactUrl } from './ilab/signature.js';
 import { aiRouter } from './routes/ai.js';
 import { authRouter } from './routes/auth.js';
 import { experimentRouter } from './routes/experiment.js';
+import { learningRouter } from './routes/learning.js';
+import { authRequired } from './auth.js';
+import { netRouter, presenceRouter, requireSeat } from './presence.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -20,8 +23,14 @@ export function createApp(): express.Express {
   app.use('/ilab', launchRouter);
   app.use('/api/ilab', ilabApiRouter);
   app.use('/api/auth', authRouter);
+  app.use('/api/presence', presenceRouter);
+  app.use('/api/net', netRouter);
+  // 实验与 AI 接口受并发闸门保护：超出承诺并发数时返回排队信息（题库列表除外）
+  app.use('/api/experiment', (req, res, next) => (req.method === 'GET' && req.path === '/steps' ? next() : authRequired(req, res, () => requireSeat(req, res, next))));
   app.use('/api/experiment', experimentRouter);
+  app.use('/api/ai', authRequired, requireSeat);
   app.use('/api/ai', aiRouter);
+  app.use('/api/learning', learningRouter);
 
   app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     // 错误日志只记录脱敏后的路径，不输出 ticket/token

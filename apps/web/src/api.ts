@@ -1,6 +1,8 @@
 import type {
   AiReviewResponse,
+  LevelAttainment,
   ChartData,
+  PreviewImage,
   LoginResponse,
   SessionState,
   StepResult,
@@ -8,7 +10,47 @@ import type {
   User
 } from '@zhian/shared';
 
-export type StepEventType = 'open' | 'interact' | 'pause' | 'resume' | 'close';
+export type StepEventType = 'open' | 'interact' | 'pause' | 'resume' | 'close' | 'hint';
+
+export interface SeatStatus {
+  admitted: boolean;
+  position?: number;
+  waiting: number;
+  active: number;
+  limit: number;
+  estimatedWaitSec?: number;
+}
+
+export interface TutorAnswer {
+  phase: 'pre' | 'during' | 'post';
+  text: string;
+  source: 'model' | 'knowledge_base';
+  knowledgePoints: Array<{ id: string; name: string; course: string }>;
+}
+
+export interface ProcessSummary {
+  submittedSteps: number;
+  interactionSteps: number;
+  totalAttempts: number;
+  retriedSteps: string[];
+  activeMinutes: number | null;
+  wallMinutes: number | null;
+  hintsUsed: number;
+  tutorRequests: number;
+  reviewRequests: number;
+  legacySteps: number;
+}
+
+export interface ArchiveItem {
+  sessionId: number;
+  startedAt: string;
+  finished: boolean;
+  totalScore: number;
+  submittedSteps: number;
+  source: string;
+  profile: ProfileItem[];
+  ladder: LevelAttainment[];
+}
 
 export interface IlabIssue {
   code: string;
@@ -90,6 +132,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${path}`, { ...init, headers }).catch(() => null);
   if (!response) throw new Error('网络连接中断，请检查网络后重试。');
   const data = await response.json().catch(() => ({}));
+  if (response.status === 429 && (data as { code?: string }).code === 'QUEUED') {
+    // 并发已满：通知界面显示排队提示
+    window.dispatchEvent(new CustomEvent('zhian:queued', { detail: data }));
+  }
   if (!response.ok) {
     const fallback = response.status >= 500 ? '服务器暂时不可用，请稍后重试，已填写的内容不会丢失。' : `请求失败（${response.status}）`;
     throw new Error((data as { message?: string }).message ?? fallback);
@@ -141,6 +187,16 @@ export const api = {
 
   ilabRetryAttachment: (sessionId: number) => request<IlabSyncResult>(`/ilab/sessions/${sessionId}/attachment/retry`, { method: 'POST' }),
 
+  tutor: (phase: TutorAnswer['phase'], stepId: string, input: Record<string, number | string>, sessionId?: number) =>
+    request<TutorAnswer>('/ai/tutor', { method: 'POST', body: JSON.stringify({ phase, stepId, input, sessionId }) }),
+
+  process: (sessionId: number) => request<ProcessSummary>(`/learning/sessions/${sessionId}/process`),
+
+  archive: () => request<{ sessions: ArchiveItem[] }>('/learning/archive'),
+
+  presence: (action: 'enter' | 'heartbeat' | 'leave') =>
+    request<SeatStatus>(`/presence/${action}`, { method: 'POST', keepalive: action === 'leave' }),
+
   ilabMockLaunchUrl: () => request<{ url: string }>('/ilab/mock/launch-url', { method: 'POST', body: JSON.stringify({}) }),
 
   /** 报告 PDF 需带登录凭据下载，返回 Blob */
@@ -152,7 +208,7 @@ export const api = {
   },
 
   preview: (stepId: string, input: Record<string, number | string>) =>
-    request<{ chart: ChartData | null; preview: string | null }>(`/experiment/preview/${stepId}`, {
+    request<{ chart: ChartData | null; preview: string | null; image: PreviewImage | null }>(`/experiment/preview/${stepId}`, {
       method: 'POST',
       body: JSON.stringify({ input })
     }),

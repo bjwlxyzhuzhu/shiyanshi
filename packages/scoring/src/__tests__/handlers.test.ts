@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AGENT_TOOLS, DATA_COLUMNS, STEPS, TOTAL_SCORE, joinList, type StepInput } from '@zhian/shared';
-import { bestPoisonSetting } from '@zhian/sim-core';
+import { bestImageDeid, bestPoisonSetting } from '@zhian/sim-core';
 import { buildProfile, DIMENSIONS, evaluateStep, hasHandler } from '../index.js';
 
 const BEST: Record<string, StepInput> = {
@@ -12,7 +12,7 @@ const BEST: Record<string, StepInput> = {
     学号: '个人信息', 姓名: '个人信息', 手机号: '个人信息', 身份证号: '敏感个人信息',
     专业: '一般数据', 满意度评分: '一般数据', 健康状况自述: '敏感个人信息'
   } as Record<string, string>)[column]!])),
-  S06: { name: '假名化', phone: '删除', idCard: '删除', health: '泛化为类别' },
+  S06: { name: '假名化', phone: '删除', idCard: '删除', health: '泛化为类别', photo: bestImageDeid().option, strength: bestImageDeid().strength },
   S07: { missing: joinList(['同意范围覆盖模型训练', '已约定数据保存期限']), conclusion: '补充授权后可用' },
   S08: { method: bestPoisonSetting().method, threshold: bestPoisonSetting().threshold },
   S09: { locations: joinList(['训练机本地缓存', '对象存储备份', '实验日志中的样本片段', '向量数据库索引', '个人电脑下载副本']), method: '安全擦除（多次覆写）' },

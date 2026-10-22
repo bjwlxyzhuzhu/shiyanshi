@@ -8,7 +8,7 @@ export const STEP_EXPORT_META: Record<string, { scoringModel: string; countsAsSt
   S03: { scoringModel: "清单正确率", countsAsStudentInteraction: true },
   S04: { scoringModel: "巡检清单80%＋环境温度20%", countsAsStudentInteraction: true },
   S05: { scoringModel: "七字段分类正确比例", countsAsStudentInteraction: true },
-  S06: { scoringModel: "隐私与可用性综合分相对最佳策略归一化", countsAsStudentInteraction: true },
+  S06: { scoringModel: "文本脱敏（隐私与可用性）70%＋图像人脸去标识化（细节残留与任务信息保留）30%，均相对最优方案归一化", countsAsStudentInteraction: true },
   S07: { scoringModel: "授权要件50%＋结论50%", countsAsStudentInteraction: true },
   S08: { scoringModel: "F1相对本数据集最优F1归一化", countsAsStudentInteraction: true },
   S09: { scoringModel: "清理位置70%＋方式30%", countsAsStudentInteraction: true },

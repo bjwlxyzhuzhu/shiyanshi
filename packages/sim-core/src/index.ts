@@ -9,3 +9,4 @@ export * from './fairness.js';
 export * from './thermal.js';
 export * from './audit.js';
 export * from './agent.js';
+export * from './imageDeid.js';

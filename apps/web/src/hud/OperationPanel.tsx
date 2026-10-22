@@ -2,15 +2,17 @@ import { useEffect, useRef } from 'react';
 import { SCENARIO, STEPS, getStep, nextStepId, type StepDefinition, type StepResult } from '@zhian/shared';
 import { ChartView } from '../components/ChartView';
 import { FieldInput } from '../components/FieldInput';
+import { ImagePreview } from '../components/ImagePreview';
 import { PREVIEW_STEPS, inputHash, useSessionStore, useStepInput } from '../stores/session';
 import { continueFrom, returnToWorld } from '../world/actions';
 import { HOTSPOT_BY_ID, STEP_HOTSPOT, ZONE_BY_ID } from '../world/layout';
 import type { TraceHop } from '../world/sceneAdapter';
 import { useWorldStore } from '../world/worldStore';
 import { IlabSyncBlock } from './IlabSync';
+import { KnowledgeBlock, LadderView, ProcessView, TutorBlock } from './Learning';
 import { Radar } from './Radar';
 
-const HIDDEN = new Set(['chart', 'preview', 'verdicts', 'trace', 'profile']);
+const HIDDEN = new Set(['chart', 'preview', 'image', 'verdicts', 'trace', 'profile']);
 const WIDE = new Set(['checklist', 'order', 'text']);
 
 function display(value: unknown): string {
@@ -140,6 +142,7 @@ function PreviewBlock({ step }: { step: StepDefinition }) {
         <button type="button" className="ghost small" onClick={() => requestPreview(step.id)} disabled={!canSubmit}>重试预览</button>
       ) : null}
       {preview?.preview ? <pre className="masked-preview">{preview.preview}</pre> : null}
+      {preview?.image ? <ImagePreview image={preview.image} /> : null}
       {preview?.chart ? (
         <ChartView
           chart={preview.chart}
@@ -312,6 +315,7 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
             <p>{step.material}</p>
           </details>
         ) : null}
+        <KnowledgeBlock step={step} />
         {step.id === 'S09' ? <p className="note">本步骤为“实验结束后清理”的预演：只记录你的选择，不会删除任何真实文件。</p> : null}
         {step.id === 'S20' ? <p className="note warn">演练告警示意：机房空调故障导致 GPU 过温。请排列处置顺序；本步不模拟处置后的温度变化。</p> : null}
         {!canSubmit ? <p className="note">这是已提交步骤的只读回看。重新提交历史步骤会使服务端进度回退，因此这里不提供提交。</p> : null}
@@ -340,8 +344,16 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
             <p className="muted small">提交后由服务端模拟一次诱导外发攻击，按返回结果显示执行、被拦截或待人工确认。</p>
           </section>
         ) : null}
+        {canSubmit || step.id === 'S24' ? <TutorBlock step={step} /> : null}
         {step.type === 'ai' ? <ReviewBlock step={step} /> : null}
         {step.id === 'S24' ? <ReportBlock /> : null}
+        {step.id === 'S24' ? (
+          <section className="preview-block">
+            <header><h3>阶梯能力与过程评价</h3><span className="source-chip muted">过程评价不计入成绩</span></header>
+            <LadderView />
+            <ProcessView />
+          </section>
+        ) : null}
         {step.id === 'S24' ? <IlabSyncBlock /> : null}
 
         {submitError?.stepId === step.id ? (

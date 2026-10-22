@@ -5,7 +5,7 @@ import { STEP_EXPORT_META } from './stepMeta.js';
  * 真实过程采集：时间一律由服务器在收到事件时记录（server_ms），不信任客户端时钟。
  * 事件只在打开/关闭设备面板、首次改动输入（限频）、页面隐藏/恢复时发送，不逐帧写库。
  */
-export const EVENT_TYPES = ['open', 'interact', 'pause', 'resume', 'close'] as const;
+export const EVENT_TYPES = ['open', 'interact', 'pause', 'resume', 'close', 'hint'] as const;
 export type StepEventType = (typeof EVENT_TYPES)[number];
 
 /**

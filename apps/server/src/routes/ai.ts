@@ -4,6 +4,8 @@ import { buildProfile } from '@zhian/scoring';
 import { authRequired, type AuthedRequest } from '../auth.js';
 import { db, nowIso } from '../db.js';
 import { callModelAudited, markParse } from '../ilab/aiAudit.js';
+import { DURING_STEPS, runTutor, type TutorPhase } from '../ai/tutor.js';
+import { reportSections } from './learning.js';
 
 export const aiRouter = Router();
 
@@ -97,6 +99,47 @@ aiRouter.post('/review', authRequired, async (req: AuthedRequest, res) => {
   res.json(payload);
 });
 
+/**
+ * AI 实验导师：实验前 / 实验中 / 实验后。指导不计分。
+ * 已提交到实验空间（锁定）的会话不再发起模型调用，避免冻结后的 AI 计数变化。
+ */
+aiRouter.post('/tutor', authRequired, async (req: AuthedRequest, res, next) => {
+  const phase = String(req.body?.phase ?? '') as TutorPhase;
+  const stepId = String(req.body?.stepId ?? '');
+  const step = STEPS.find((item) => item.id === stepId);
+  if (!['pre', 'during', 'post'].includes(phase) || !step || (phase === 'during' && !DURING_STEPS.has(stepId))) {
+    res.status(400).json({ code: 'BAD_INPUT', message: '该步骤不支持此类指导' });
+    return;
+  }
+  const requested = req.body?.sessionId ? Number(req.body.sessionId) : null;
+  const owned = requested
+    ? db.prepare('SELECT id, locked FROM sessions WHERE id = ? AND user_id = ?').get(requested, req.user!.id) as { id: number; locked: number } | undefined
+    : undefined;
+  if (phase === 'post' && !owned) {
+    res.status(404).json({ code: 'NO_SESSION', message: '实验会话不存在' });
+    return;
+  }
+  const limit = Number(process.env.AI_TUTOR_MAX_CALLS ?? 40);
+  const used = owned
+    ? (db.prepare("SELECT COUNT(*) AS c FROM ai_invocations WHERE session_id = ? AND scenario LIKE 'tutor:%' AND dispatch_state <> 'not_configured'").get(owned.id) as { c: number }).c
+    : 0;
+  try {
+    const answer = await runTutor({
+      phase,
+      stepId,
+      input: (req.body?.input ?? {}) as StepInput,
+      sessionId: owned?.id ?? null,
+      userId: req.user!.id,
+      allowModel: !owned?.locked && Number(used) < limit
+    });
+    db.prepare('INSERT INTO tutor_notes (session_id, user_id, step_id, phase, source, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(owned?.id ?? null, req.user!.id, stepId, phase, answer.source, answer.text, nowIso());
+    res.json(answer);
+  } catch (error) {
+    next(error);
+  }
+});
+
 aiRouter.post('/report', authRequired, (req: AuthedRequest, res) => {
   const user = req.user!;
   const sessionId = Number(req.body?.sessionId ?? 0);
@@ -144,7 +187,9 @@ aiRouter.post('/report', authRequired, (req: AuthedRequest, res) => {
     '',
     weakest
       ? `本次最薄弱的维度是「${weakest.label}」（达成率 ${weakest.percent}%），建议重做该维度对应步骤并对照反馈修正。`
-      : '暂无足够数据形成建议。'
+      : '暂无足够数据形成建议。',
+    '',
+    ...reportSections(sessionId)
   ];
 
   const contentMd = lines.join('\n');

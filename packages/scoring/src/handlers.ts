@@ -13,6 +13,7 @@ import {
   INCIDENT,
   assessRisk,
   bestDesensitizeScore,
+  bestImageDeid,
   bestPoisonSetting,
   checklistAccuracy,
   clamp01,
@@ -22,15 +23,19 @@ import {
   detectKeyLeak,
   detectPoisoning,
   evaluateFairness,
+  imageDeidScore,
   eventsInWindow,
   eventsPerHour,
   orderSimilarity,
+  processPortrait,
   round,
   simulateExfiltration,
   simulateGpuThermal
 } from '@zhian/sim-core';
 
 const BEST_DESENSITIZE = bestDesensitizeScore();
+const BEST_IMAGE = bestImageDeid();
+const BEST_IMAGE_DEID = BEST_IMAGE.score;
 const BEST_POISON = bestPoisonSetting();
 
 export interface Evaluation {
@@ -139,19 +144,34 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     const outcome = desensitize({
       name: text(input, 'name'), phone: text(input, 'phone'), idCard: text(input, 'idCard'), health: text(input, 'health')
     });
-    const ratio = desensitizeScore(outcome) / BEST_DESENSITIZE;
+    const textRatio = desensitizeScore(outcome) / BEST_DESENSITIZE;
+    // 图像部分：人脸去标识化（数字图像处理），按全部选项与强度的最优解归一化
+    const image = processPortrait(text(input, 'photo') || '保留原图', num(input, 'strength', 1));
+    const imageRatio = imageDeidScore(image) / BEST_IMAGE_DEID;
+    const ratio = clamp01(0.7 * textRatio + 0.3 * imageRatio);
+    const imageFeedback = image.processed === null
+      ? '删除整张图像虽然保护了隐私，但护目镜信息也随之丢失，训练任务无法进行。'
+      : image.identifiability > 0.2
+        ? '人脸区域仍残留较多高频细节（五官边缘），身份可能被识别，需要更强的低通处理。'
+        : image.taskUtility < 0.5
+          ? '人脸已难以识别，但护目镜等任务信息被一并抹去，可降低处理强度或改用低通滤波。'
+          : '图像去除了身份细节，同时保留了护目镜这一低频任务信息。';
+    const textFeedback = outcome.residualHits.length
+      ? '文本脱敏后仍能被自动识别出个人标识，需加强处理。'
+      : outcome.utility < 0.8 ? '文本隐私风险已控制，但删除过多信息影响后续分析，可考虑泛化。' : '文本在隐私保护与数据可用性之间取得了较好平衡。';
     return {
       ratio,
       result: {
         preview: outcome.masked,
+        image: { width: image.width, height: image.height, original: image.original, processed: image.processed },
         脱敏后样例: outcome.masked,
         残留可识别标识: outcome.residualHits.length ? outcome.residualHits.map((hit) => hit.type).join('、') : '无',
         隐私风险指数: outcome.riskIndex,
-        数据可用性: outcome.utility
+        数据可用性: outcome.utility,
+        人脸高频细节残留: image.identifiability,
+        护目镜信息保留: image.taskUtility
       },
-      feedback: outcome.residualHits.length
-        ? '脱敏后仍能被自动识别出个人标识，需加强处理。'
-        : outcome.utility < 0.8 ? '隐私风险已控制，但删除过多信息影响后续分析，可考虑泛化。' : '在隐私保护与数据可用性之间取得了较好平衡。'
+      feedback: `${textFeedback}${imageFeedback}`
     };
   },
 

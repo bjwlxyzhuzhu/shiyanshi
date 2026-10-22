@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { api, type SeatStatus } from '../api';
 import { BRAND, STEPS } from '@zhian/shared';
 import { ActionBar, HelpDrawer, KeyHints, Notices, Objective, RecordsDrawer, SettingsDrawer, TopBar } from '../hud/Hud';
 import { STAGE_SHORT } from '../world/layout';
@@ -86,6 +87,20 @@ function HtmlExperiment() {
   );
 }
 
+/** 超出承诺并发数时的排队提示：显示位置与预计等待，定期重试 */
+function QueueVeil({ status }: { status: SeatStatus }) {
+  const minutes = status.estimatedWaitSec ? Math.max(1, Math.round(status.estimatedWaitSec / 60)) : null;
+  return (
+    <div className="veil" role="status" aria-live="polite">
+      <div className="veil-card">
+        <span className="spinner" aria-hidden />
+        <b>当前在线人数已满（{status.active}/{status.limit}）</b>
+        <p>您排在第 {status.position ?? '—'} 位{minutes ? `，预计等待约 ${minutes} 分钟` : ''}。页面会自动重试，请勿关闭。</p>
+      </div>
+    </div>
+  );
+}
+
 export function Experiment({ scene }: { scene: SceneState }) {
   const session = useSessionStore((state) => state.session);
   const user = useSessionStore((state) => state.user);
@@ -98,9 +113,51 @@ export function Experiment({ scene }: { scene: SceneState }) {
   const introSeen = useWorldStore((state) => state.introSeen);
   const focusHotspotId = useWorldStore((state) => state.focusHotspotId);
 
+  const [seat, setSeat] = useState<SeatStatus | null>(null);
+  const admitted = seat?.admitted === true;
+  const hintLevel = useWorldStore((state) => state.hintLevel);
+  const lastHint = useRef(0);
+
+  // 并发席位：进入时申请，满员排队轮询；进入后每 30 秒心跳，离开页面释放
   useEffect(() => {
-    if (!session) void start();
-  }, [session, start]);
+    let cancelled = false;
+    let timer = 0;
+    const tick = async (action: 'enter' | 'heartbeat') => {
+      try {
+        const status = await api.presence(action);
+        if (cancelled) return;
+        setSeat(status);
+        timer = window.setTimeout(() => void tick(status.admitted ? 'heartbeat' : 'enter'), status.admitted ? 30_000 : 5_000);
+      } catch {
+        if (!cancelled) timer = window.setTimeout(() => void tick('enter'), 5_000);
+      }
+    };
+    void tick('enter');
+    const onQueued = (event: Event) => {
+      setSeat((event as CustomEvent<SeatStatus>).detail);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void tick('enter'), 5_000);
+    };
+    const onLeave = () => void api.presence('leave').catch(() => undefined);
+    window.addEventListener('zhian:queued', onQueued);
+    window.addEventListener('pagehide', onLeave);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('zhian:queued', onQueued);
+      window.removeEventListener('pagehide', onLeave);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session && admitted) void start();
+  }, [session, start, admitted]);
+
+  // 过程评价：记录提示使用（只在提示层级提升时记一次）
+  useEffect(() => {
+    if (hintLevel > lastHint.current && session) useSessionStore.getState().track(session.currentStepId, 'hint');
+    lastHint.current = hintLevel;
+  }, [hintLevel, session]);
 
   // 会话就绪后：人物放到当前任务设备的安全站位，相机从展示镜头过渡到跟随
   useEffect(() => {
@@ -155,7 +212,7 @@ export function Experiment({ scene }: { scene: SceneState }) {
     if (drawer !== 'none') clearKeys();
   }, [drawer]);
 
-  if (htmlMode) return <HtmlExperiment />;
+  if (htmlMode) return <>{seat && !seat.admitted ? <QueueVeil status={seat} /> : null}<HtmlExperiment /></>;
 
   const panelOpen = (mode === 'focusing' || mode === 'operating') && Boolean(focusHotspotId);
   const closeReview = () => {
@@ -192,7 +249,7 @@ export function Experiment({ scene }: { scene: SceneState }) {
       ) : null}
       {drawer === 'settings' ? <SettingsDrawer /> : null}
       {drawer === 'help' ? <HelpDrawer /> : null}
-      <LoadingVeil />
+      {seat && !seat.admitted ? <QueueVeil status={seat} /> : <LoadingVeil />}
     </div>
   );
 }

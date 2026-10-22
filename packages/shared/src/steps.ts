@@ -84,13 +84,15 @@ export const STEPS: StepDefinition[] = [
   },
   {
     id: 'S06', seq: 6, stage: '数据安全', name: '个人信息识别与脱敏', type: 'form', maxScore: 5,
-    description: '为每类字段选择脱敏策略，在隐私风险与数据可用性之间取得平衡。',
-    material: '样例记录：张伟，手机 13812345678，身份证 610303200201015678，健康状况：有轻度焦虑，近期睡眠差。',
+    description: '为每类字段选择脱敏策略，并对门禁抓拍图像做人脸去标识化，在隐私风险与数据可用性之间取得平衡。',
+    material: '样例记录：张伟，手机 13812345678，身份证 610303200201015678，健康状况：有轻度焦虑，近期睡眠差。数据集另含实验室门禁抓拍图像，用于训练“是否佩戴护目镜”识别模型，人脸身份与训练任务无关（图像为程序合成）。',
     fields: [
       { key: 'name', label: '姓名', kind: 'select', options: ['保留', '部分遮蔽', '假名化', '删除'], default: '保留' },
       { key: 'phone', label: '手机号', kind: 'select', options: ['保留', '部分遮蔽', '假名化', '删除'], default: '保留' },
       { key: 'idCard', label: '身份证号', kind: 'select', options: ['保留', '部分遮蔽', '假名化', '删除'], default: '保留' },
-      { key: 'health', label: '健康状况自述', kind: 'select', options: ['保留', '泛化为类别', '删除'], default: '保留' }
+      { key: 'health', label: '健康状况自述', kind: 'select', options: ['保留', '泛化为类别', '删除'], default: '保留' },
+      { key: 'photo', label: '门禁抓拍图像（人脸）', kind: 'select', options: ['保留原图', '人脸区域马赛克', '人脸区域高斯模糊', '人脸区域涂黑', '删除整张图像'], default: '保留原图' },
+      { key: 'strength', label: '处理强度（马赛克块边长 / 模糊半径）', kind: 'number', unit: '像素', min: 1, max: 12, step: 1, default: 1 }
     ]
   },
   {

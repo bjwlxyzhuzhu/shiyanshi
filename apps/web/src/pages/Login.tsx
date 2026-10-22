@@ -35,7 +35,7 @@ export function Login({ ilabError = null }: { ilabError?: string | null }) {
       <section className="login-hero">
         <h1>进入实验，守护每一次智能决策</h1>
         <p className="login-full">{BRAND.fullName}</p>
-        <p className="login-tags">24 步交互 · 五维能力画像 · {BRAND.direction}</p>
+        <p className="login-tags">24 步交互 · 融合 5 门课程 · 阶梯能力与成长档案 · {BRAND.direction}</p>
       </section>
       <form className="login-card" onSubmit={submit} data-block-keys>
         <h2>进入实验</h2>

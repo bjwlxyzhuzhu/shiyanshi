@@ -2,6 +2,7 @@ import { BRAND, STEPS } from '@zhian/shared';
 import { buildProfile } from '@zhian/scoring';
 import { db, nowIso } from '../db.js';
 import { buildAiData } from './aiAudit.js';
+import { reportSections } from '../routes/learning.js';
 import type { ApiOutcome } from './client.js';
 import { SYNTHETIC_EXPECT_TIME_SEC, ilabConfig, loadExpectTimes, type IlabMode } from './config.js';
 import { BudgetExhaustedError, ReentryRequiredError, callWithToken, clientFor, getContext, ledgerCount, type ContextRow } from './identity.js';
@@ -158,9 +159,12 @@ export async function generateReport(session: SessionRow, exported: MapperOutput
       const seconds = step.wallStartMs !== null && step.wallEndMs !== null ? `${Math.floor(step.wallEndMs / 1000) - Math.floor(step.wallStartMs / 1000)} 秒` : '无观测';
       return { text: `${step.stepId} ${name}｜得分 ${step.rawScore}/${step.rawMaxScore}｜提交 ${step.attempts} 次｜用时 ${seconds}｜过程证据：${EVIDENCE_LABEL[step.evidence] ?? step.evidence}` };
     }),
+    ...reportSections(session.id).filter((line) => line !== '').map((line) => line.startsWith('## ')
+      ? { text: line.slice(3), size: 14, gap: 12 }
+      : { text: line.replace(/^- /, '· ') }),
     { text: '人工智能使用说明', size: 14, gap: 12 },
     { text: `安全助手模型调用：${String(ai.aiData.ai_call_count)} 次（${ai.audit.policy === 'unconfirmed' ? '计次口径待确认，按收到模型响应计' : ai.audit.policy}）；未配置模型时由规则引擎兜底，不计调用。` },
-    { text: '本报告由系统模板生成，未调用大模型；温度、脱敏、投毒检测等为确定性仿真，不属于模型调用。' }
+    { text: '报告正文由系统模板生成，不调用大模型；“AI 实验导师反思建议”一节如来源为大模型，已在生成时计入调用审计。温度、脱敏、投毒检测与图像去标识化均为确定性仿真，不属于模型调用。' }
   ];
   const bytes = await buildPdf(`${BRAND.name}实验报告`, lines);
   const sha = sha256Hex(bytes);

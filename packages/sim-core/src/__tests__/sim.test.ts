@@ -132,3 +132,35 @@ describe('agent', () => {
     expect(gated.compliantTools).toBe(5);
   });
 });
+
+import { PHOTO_OPTIONS, bestImageDeid, imageDeidScore, processPortrait } from '../imageDeid.js';
+
+describe('人脸去标识化（数字图像处理）', () => {
+  it('保留原图：身份细节全部残留', () => {
+    expect(processPortrait('保留原图', 1).identifiability).toBe(1);
+  });
+  it('低通处理去掉高频身份细节，强度越大残留越少', () => {
+    const weak = processPortrait('人脸区域高斯模糊', 1).identifiability;
+    const strong = processPortrait('人脸区域高斯模糊', 6).identifiability;
+    expect(strong).toBeLessThan(weak);
+    expect(strong).toBeLessThan(0.2);
+  });
+  it('涂黑/删除保护隐私但毁掉护目镜任务信息', () => {
+    for (const option of ['人脸区域涂黑', '删除整张图像']) {
+      const result = processPortrait(option, 4);
+      expect(result.identifiability).toBe(0);
+      expect(result.taskUtility).toBe(0);
+    }
+  });
+  it('最优解是适中强度的低通处理，而不是涂黑或删除', () => {
+    const best = bestImageDeid();
+    expect(['人脸区域马赛克', '人脸区域高斯模糊']).toContain(best.option);
+    expect(best.score).toBeGreaterThan(imageDeidScore(processPortrait('人脸区域涂黑', 1)));
+    expect(PHOTO_OPTIONS).toHaveLength(5);
+  });
+  it('处理只作用于人脸区域，实验服区域保持不变', () => {
+    const result = processPortrait('人脸区域马赛克', 8);
+    const n = result.width;
+    for (let y = 36; y < n; y++) for (let x = 0; x < n; x++) expect(result.processed![y * n + x]).toBe(result.original[y * n + x]);
+  });
+});

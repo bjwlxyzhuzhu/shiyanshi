@@ -538,3 +538,34 @@ kbd {
 .ok-text { color: var(--success); font-size: 14px; margin: 8px 0 0; }
 .ilab-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 .ilab-chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--amber); color: var(--amber); white-space: nowrap; }
+
+.image-preview { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.image-cell { margin: 0; display: grid; gap: 4px; justify-items: center; }
+.image-cell canvas { width: 144px; height: 144px; image-rendering: pixelated; border-radius: 6px; border: 1px solid var(--border-soft); background: #0a131b; }
+.image-cell figcaption { font-size: 13px; color: var(--muted); }
+
+/* ---------- 知识点、导师、阶梯能力、档案 ---------- */
+.course-chip { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 500; border: 1px solid #2f6e7a; color: var(--cyan); }
+.kp-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.kp-list li { display: grid; gap: 2px; font-size: 14px; }
+.kp-list small { color: var(--muted); }
+.tutor-block { margin-top: 16px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border-soft); background: #0f1a24; }
+.tutor-block header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tutor-block h3 { margin: 0; font-size: 17px; }
+.tutor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tutor-answer { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: #0c1620; border-left: 3px solid var(--cyan); font-size: 14px; }
+.tutor-answer p { margin: 6px 0 0; white-space: pre-wrap; }
+.ladder { display: grid; gap: 6px; margin-bottom: 10px; }
+.ladder-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; background: #0c1620; border-left: 3px solid #3a4f60; font-size: 14px; }
+.ladder-row div { display: grid; }
+.ladder-row small { color: var(--muted); font-size: 12px; }
+.ladder-id { font-weight: 700; color: var(--muted); }
+.ladder-state { display: grid; justify-items: end; font-weight: 600; }
+.ladder-row.s-达成 { border-left-color: var(--cyan); }
+.ladder-row.s-优秀 { border-left-color: var(--success); }
+.ladder-row.s-未达成 { border-left-color: var(--danger); }
+.archive-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.archive-list li { display: grid; grid-template-columns: 88px 1fr 44px; gap: 8px; align-items: center; font-size: 14px; }
+.archive-list li small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.team-list { list-style: none; padding: 0; display: grid; gap: 6px; }
+.team-list li { display: grid; grid-template-columns: 64px 1fr; gap: 8px; }

@@ -6,6 +6,7 @@ import {
   nextStepId,
   type AiReviewResponse,
   type ChartData,
+  type PreviewImage,
   type SessionState,
   type StepDefinition,
   type StepResult,
@@ -68,6 +69,7 @@ export interface PreviewState {
   status: 'loading' | 'ok' | 'error';
   chart: ChartData | null;
   preview: string | null;
+  image?: PreviewImage | null;
   /** 当前图表对应的输入指纹；与最新输入不同时表示正在更新或已过期 */
   forHash: string | null;
 }
@@ -154,6 +156,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   logout: () => {
+    // 释放并发席位（失败不影响退出）
+    if (getToken()) api.presence('leave').catch(() => undefined);
     setAuth(null, null);
     writeSessionId(null);
     set({ token: null, user: null, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle(), error: null, submitError: null, viewStepId: 'S01' });
@@ -290,7 +294,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const existing = previewTimers.get(stepId);
     if (existing) window.clearTimeout(existing);
     const prev = get().previews[stepId];
-    set({ previews: { ...get().previews, [stepId]: { status: 'loading', chart: prev?.chart ?? null, preview: prev?.preview ?? null, forHash: prev?.forHash ?? null } } });
+    set({ previews: { ...get().previews, [stepId]: { status: 'loading', chart: prev?.chart ?? null, preview: prev?.preview ?? null, image: prev?.image ?? null, forHash: prev?.forHash ?? null } } });
     const timer = window.setTimeout(() => {
       previewTimers.delete(stepId);
       const input = get().inputFor(stepId);
@@ -298,12 +302,12 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       api.preview(stepId, input)
         .then((data) => {
           if (inputHash(get().inputFor(stepId)) !== hash) return;
-          set({ previews: { ...get().previews, [stepId]: { status: 'ok', chart: data.chart, preview: data.preview, forHash: hash } } });
+          set({ previews: { ...get().previews, [stepId]: { status: 'ok', chart: data.chart, preview: data.preview, image: data.image, forHash: hash } } });
         })
         .catch(() => {
           if (inputHash(get().inputFor(stepId)) !== hash) return;
           const current = get().previews[stepId];
-          set({ previews: { ...get().previews, [stepId]: { status: 'error', chart: current?.chart ?? null, preview: current?.preview ?? null, forHash: current?.forHash ?? null } } });
+          set({ previews: { ...get().previews, [stepId]: { status: 'error', chart: current?.chart ?? null, preview: current?.preview ?? null, image: current?.image ?? null, forHash: current?.forHash ?? null } } });
         });
     }, 220);
     previewTimers.set(stepId, timer);

@@ -12,6 +12,7 @@
   "dependencies": {
     "@zhian/scoring": "workspace:*",
     "@zhian/shared": "workspace:*",
+    "@zhian/sim-core": "workspace:*",
     "cors": "^2.8.5",
     "express": "^4.21.1",
     "pdfkit": "0.15.2"

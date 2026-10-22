@@ -173,4 +173,22 @@ export function migrate(db: DatabaseSync): void {
     addColumn(db, 'ai_logs', 'invocation_id', 'TEXT');
     db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(1, new Date().toISOString());
   }
+
+  if (!applied.has(2)) {
+    // AI 实验导师生成的指导/反思（用于报告与成长档案）
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tutor_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER,
+        user_id INTEGER NOT NULL,
+        step_id TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        source TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_tutor_notes_session ON tutor_notes (session_id, phase, id);
+    `);
+    db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(2, new Date().toISOString());
+  }
 }

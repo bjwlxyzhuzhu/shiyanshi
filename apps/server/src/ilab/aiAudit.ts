@@ -134,6 +134,16 @@ export interface AiDataResult {
   audit: { policy: AiCountPolicy; candidatePolicy: 'response_received' | 'dispatched'; dispatchedAttempts: number; responsesReceived: number; notConfigured: number; inFlight: number };
 }
 
+const SCENARIO_LABELS: Record<string, string> = {
+  'tutor:pre': '实验前方案设计指导与资源推荐',
+  'tutor:during': '实验中仿真数据分析与智能反馈',
+  'tutor:post': '实验后反思改进与创新路径规划'
+};
+
+function scenarioLabel(row: { scenario: string | null; step_id: string | null }): string {
+  return SCENARIO_LABELS[row.scenario ?? ''] ?? AI_SCENARIOS[row.step_id ?? ''] ?? row.scenario ?? '';
+}
+
 /** 是否仍有已发出但未结束的模型请求（冻结 ai_data 前必须为 0） */
 export function inFlightCount(sessionId: number): number {
   const row = db.prepare('SELECT COUNT(*) AS c FROM ai_invocations WHERE session_id = ? AND ended_ms IS NULL').get(sessionId) as { c: number };
@@ -168,12 +178,12 @@ export function buildAiData(sessionId: number, policy: AiCountPolicy = ilabConfi
       models.set(JSON.stringify(model), model);
     }
     aiData.ai_models_used = [...models.values()];
-    aiData.ai_usage_scenarios = [...new Set(counted.map((row) => AI_SCENARIOS[row.step_id ?? ''] ?? row.scenario ?? '').filter(Boolean))];
+    aiData.ai_usage_scenarios = [...new Set(counted.map((row) => scenarioLabel(row)).filter(Boolean))];
     if (counted.every((row) => row.usage_complete === 1)) {
       aiData.ai_input_token_count = counted.reduce((sum, row) => sum + (row.prompt_tokens ?? 0), 0);
       aiData.ai_output_token_count = counted.reduce((sum, row) => sum + (row.completion_tokens ?? 0), 0);
     }
-    aiData.ai_remark = '学生方案由安全助手（大模型）评审，评审不计分；模型不可用时由规则引擎兜底。';
+    aiData.ai_remark = '大模型用于实验前方案指导、实验中仿真数据反馈、实验后反思规划与方案评审，均不计分；模型不可用时由知识库规则兜底。';
   } else {
     aiData.ai_remark = '本次实验未产生模型调用；评审由规则引擎完成，报告为本地模板生成。';
   }

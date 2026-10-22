@@ -64,7 +64,7 @@ experimentRouter.post('/preview/:stepId', authRequired, (req, res) => {
     return;
   }
   const { result } = evaluateStep(stepId, (req.body?.input ?? {}) as StepInput);
-  res.json({ chart: result.chart ?? null, preview: result.preview ?? null });
+  res.json({ chart: result.chart ?? null, preview: result.preview ?? null, image: result.image ?? null });
 });
 
 /** 从实验空间进入的用户：新会话绑定其当前环境的外部上下文；本地账号行为不变 */

@@ -181,6 +181,9 @@ importers:
       '@zhian/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@zhian/sim-core':
+        specifier: workspace:*
+        version: link:../../packages/sim-core
       cors:
         specifier: ^2.8.5
         version: 2.8.6

@@ -42,6 +42,14 @@ export interface StepSubmit {
   input: StepInput;
 }
 
+/** 图像预览（灰度 0–255，行优先）；processed 为 null 表示图像被删除 */
+export interface PreviewImage {
+  width: number;
+  height: number;
+  original: number[];
+  processed: number[] | null;
+}
+
 export interface ChartSeries {
   name: string;
   values: number[];

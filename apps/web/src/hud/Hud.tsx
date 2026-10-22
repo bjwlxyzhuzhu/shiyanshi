@@ -5,6 +5,7 @@ import { interactWith } from '../world/actions';
 import { HOTSPOT_BY_ID, STAGE_SHORT, STEP_OBJECTIVE, STEP_OPERATION_HINT, ZONE_BY_ID, hotspotForStep } from '../world/layout';
 import type { SceneState } from '../world/sceneAdapter';
 import { perf, useWorldStore, type Quality } from '../world/worldStore';
+import { ArchiveView, LadderView, NetworkCheck, ProjectInfo } from './Learning';
 
 export function TopBar({ scene }: { scene: SceneState }) {
   const session = useSessionStore((state) => state.session);
@@ -207,6 +208,14 @@ export function RecordsDrawer({ onReview }: { onReview: (stepId: string) => void
           ))}
         </div>
       </section>
+      <section className="records-stage">
+        <h3>阶梯能力 <span className="source-chip muted">基础 → 综合 → 复杂问题</span></h3>
+        <LadderView />
+      </section>
+      <section className="records-stage">
+        <h3>成长档案 <span className="source-chip muted">本人历次实验</span></h3>
+        <ArchiveView />
+      </section>
       <section className="records-stage danger-zone">
         <h3>会话</h3>
         {confirming ? (
@@ -271,6 +280,7 @@ export function SettingsDrawer() {
         <input type="checkbox" checked={htmlMode} onChange={(event) => setHtmlMode(event.target.checked)} />
         <span><b>HTML 实验模式</b><small>不使用三维场景，用同样的字段与接口完成实验</small></span>
       </label>
+      <NetworkCheck />
       <section className="perf-box">
         <h3>本机实测（最近 {stats?.samples ?? 0} 帧）</h3>
         {stats ? (
@@ -310,6 +320,7 @@ export function HelpDrawer() {
           <li>温度曲线、攻击路径均为教学仿真，不连接真实设备、不调用真实工具。</li>
         </ul>
       </section>
+      <ProjectInfo />
     </Drawer>
   );
 }
