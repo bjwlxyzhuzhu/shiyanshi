@@ -220,4 +220,27 @@ export function migrate(db: DatabaseSync): void {
     addColumn(db, 'step_attempts', 'bank_version', 'TEXT');
     db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(3, new Date().toISOString());
   }
+
+  if (!applied.has(4)) {
+    // 预习成绩与教师评价（申报书“成绩类型”）；均不改变 24 步的 100 分制成绩
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS prelab_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        answers_json TEXT NOT NULL,
+        correct INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_prelab_user ON prelab_attempts (user_id, id);
+      CREATE TABLE IF NOT EXISTS teacher_reviews (
+        session_id INTEGER PRIMARY KEY,
+        teacher_id INTEGER NOT NULL,
+        grade TEXT NOT NULL,
+        comment TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(4, new Date().toISOString());
+  }
 }

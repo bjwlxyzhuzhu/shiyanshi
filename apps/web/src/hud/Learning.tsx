@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ABILITY_LEVELS, COURSES, KNOWLEDGE_POINTS, PROJECT_INFO, TEAM, buildLadder, coursesForStep, knowledgeForStep, type StepDefinition } from '@zhian/shared';
-import { api, type ArchiveItem, type ProcessSummary, type TutorAnswer } from '../api';
+import { ABILITY_LEVELS, COURSES, KNOWLEDGE_POINTS, PROJECT_INFO, TEAM, buildCourseAttainment, buildLadder, coursesForStep, knowledgeForStep, type PrelabQuestion, type StepDefinition } from '@zhian/shared';
+import { api, type ArchiveItem, type ProcessSummary, type TutorAnswer, type PrelabSummary } from '../api';
 import { useSessionStore, useStepInput } from '../stores/session';
 
 const DURING_STEPS = new Set(['S06', 'S08', 'S13', 'S17', 'S19', 'S21']);
@@ -97,10 +97,86 @@ export function LadderView() {
           <div>
             <b>{level.name}</b>
             <small>{ABILITY_LEVELS[index]!.goal}</small>
+            <small className="ladder-pos">对标岗位：{ABILITY_LEVELS[index]!.positions.map((item) => item.split('：')[0]).join('、')}</small>
           </div>
           <span className="ladder-state">{level.status}<small>{level.max ? `${Math.round(level.ratio * 100)}%` : '—'} · {level.submitted}/{level.total}</small></span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** 跨学科学习经历：五门课程关联步骤的得分率 */
+export function CourseView() {
+  const session = useSessionStore((state) => state.session);
+  const items = buildCourseAttainment(session?.stepRecords ?? []);
+  return (
+    <div className="profile-bars">
+      {items.map((item) => (
+        <div className="row" key={item.id}>
+          <span>{item.name}</span>
+          <div className="meter"><i style={{ width: `${Math.round(item.ratio * 100)}%` }} /></div>
+          <span>{item.max ? `${Math.round(item.ratio * 100)}% · ${item.stepsDone}/${item.stepsTotal}` : '—'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 预习测验：10 道原理题，单独记“预习成绩”，不计入 100 分；可重复作答 */
+export function PrelabView() {
+  const [questions, setQuestions] = useState<PrelabQuestion[]>([]);
+  const [summary, setSummary] = useState<PrelabSummary | null>(null);
+  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.submitPrelab>> | null>(null);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.prelab().then((data) => { setQuestions(data.questions); setSummary(data.summary); }).catch(() => setError('预习测验暂不可用'));
+  }, []);
+  const submit = async () => {
+    setError(null);
+    try {
+      const data = await api.submitPrelab(answers);
+      setResult(data);
+      setSummary(data.summary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '提交失败');
+    }
+  };
+  const summaryText = summary && summary.best !== null ? `最好 ${summary.best}/${summary.total}，最近 ${summary.latest}/${summary.total}（共 ${summary.attempts} 次）` : '尚未作答';
+  if (!open) {
+    return (
+      <div className="confirm">
+        <p className="small">{summaryText}。预习成绩单独记录，不计入 24 步的 100 分。</p>
+        <button type="button" className="ghost small" disabled={!questions.length} onClick={() => { setOpen(true); setResult(null); setAnswers({}); }}>{summary?.attempts ? '再做一次' : '开始预习测验'}</button>
+        {error ? <p className="error-text">{error}</p> : null}
+      </div>
+    );
+  }
+  return (
+    <div className="prelab" data-block-keys>
+      {questions.map((question, index) => {
+        const verdict = result?.results.find((item) => item.id === question.id);
+        return (
+          <fieldset key={question.id} className={verdict ? (verdict.correct ? 'ok' : 'bad') : ''}>
+            <legend>{index + 1}. {question.stem}</legend>
+            {question.options.map((option, optionIndex) => (
+              <label key={option} className={`check${verdict && verdict.answer === optionIndex ? ' answer' : ''}`}>
+                <input type="radio" name={question.id} disabled={Boolean(result)} checked={answers[question.id] === optionIndex} onChange={() => setAnswers((current) => ({ ...current, [question.id]: optionIndex }))} />
+                {option}
+              </label>
+            ))}
+            {verdict ? <p className="small muted">{verdict.correct ? '正确。' : '错误。'}{verdict.explain}</p> : null}
+          </fieldset>
+        );
+      })}
+      {result ? <p className="ok-text">本次得分 {result.correct}/{result.total}。{summaryText}</p> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="confirm">
+        {!result ? <button type="button" className="primary" disabled={Object.keys(answers).length < questions.length} onClick={() => void submit()}>提交预习测验</button> : null}
+        <button type="button" className="ghost small" onClick={() => setOpen(false)}>{result ? '完成' : '收起'}</button>
+      </div>
     </div>
   );
 }
@@ -137,7 +213,8 @@ export function ArchiveView() {
           <span>{new Date(item.startedAt).toLocaleDateString('zh-CN')}</span>
           <div className="meter"><i style={{ width: `${(item.totalScore / max) * 100}%` }} /></div>
           <b>{item.totalScore}</b>
-          <small>{item.submittedSteps}/24 步 · {item.ladder.map((level) => `${level.id}${level.status}`).join(' ')}</small>
+          <small>{item.submittedSteps}/24 步 · {item.ladder.map((level) => `${level.id}${level.status}`).join(' ')}{item.teacherReview ? ` · 教师评价：${item.teacherReview.grade}` : ''}</small>
+          {item.teacherReview?.comment ? <small className="muted">评语：{item.teacherReview.comment}</small> : null}
         </li>
       ))}
     </ul>
@@ -200,7 +277,7 @@ export function ProjectInfo() {
         <li>大模型只用于实验指导、仿真数据反馈、反思建议和方案评审，均不计分；成绩全部由确定性评分规则给出。</li>
         <li>发送给模型的内容不含个人信息，也不含评分规则与标准答案；模型输出会过滤手机号、身份证号等个人信息。</li>
         <li>模型不可用时由课程知识库规则兜底，界面如实标注来源；每次模型调用均记录审计，便于伦理审查与核验。</li>
-        <li>实验中的问卷记录、人像图像均为程序合成数据，不使用真实学生信息。</li>
+        <li>实验中的企业产线记录、工位图像均为按企业数据结构程序合成的数据，不含任何真实员工或学生信息。</li>
       </ul>
     </section>
   );

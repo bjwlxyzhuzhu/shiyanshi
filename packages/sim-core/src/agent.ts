@@ -29,10 +29,10 @@ function outcomeFor(level: string, needsWrite: boolean): AttackStep['outcome'] {
   return '执行';
 }
 
-/** 模拟一次间接提示注入：诱导智能体读取问卷文件并外发。 */
+/** 模拟一次间接提示注入：诱导智能体读取企业质检数据文件并外发。 */
 export function simulateExfiltration(levels: Record<string, string>): AttackResult {
   const read = outcomeFor(levels['文件读取'] ?? '自动允许', false);
-  const trace: AttackStep[] = [{ action: '读取 survey.csv', tool: '文件读取', outcome: read }];
+  const trace: AttackStep[] = [{ action: '读取 qc_records.csv', tool: '文件读取', outcome: read }];
 
   if (read === '执行') {
     trace.push({ action: '把文件发送到外部邮箱', tool: '发送邮件', outcome: outcomeFor(levels['发送邮件'] ?? '自动允许', true) });

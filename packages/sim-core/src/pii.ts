@@ -1,10 +1,10 @@
 import { clamp01, round } from './metrics.js';
 
 export const SAMPLE_RECORD = {
-  name: '张伟',
+  name: '王磊',
   phone: '13812345678',
   idCard: '610303200201015678',
-  health: '有轻度焦虑，近期睡眠差'
+  health: '噪声作业岗位，听力轻度下降，建议复查'
 };
 
 export interface PiiHit {
@@ -61,7 +61,7 @@ function applyIdCard(value: string, strategy: Strategy): string {
 }
 
 function applyHealth(value: string, strategy: Strategy): string {
-  if (strategy === '泛化为类别') return '心理健康类';
+  if (strategy === '泛化为类别') return '职业健康类';
   if (strategy === '删除') return '[已删除]';
   return value;
 }
@@ -77,7 +77,7 @@ export function desensitize(strategies: Record<'name' | 'phone' | 'idCard' | 'he
   const s = strategies as Record<'name' | 'phone' | 'idCard' | 'health', Strategy>;
   const masked =
     `${applyName(SAMPLE_RECORD.name, s.name)}，手机 ${applyPhone(SAMPLE_RECORD.phone, s.phone)}，` +
-    `身份证 ${applyIdCard(SAMPLE_RECORD.idCard, s.idCard)}，健康状况：${applyHealth(SAMPLE_RECORD.health, s.health)}`;
+    `身份证 ${applyIdCard(SAMPLE_RECORD.idCard, s.idCard)}，职业健康体检：${applyHealth(SAMPLE_RECORD.health, s.health)}`;
 
   const risk =
     (RISK.name![s.name] ?? 0.25) +

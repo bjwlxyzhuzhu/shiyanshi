@@ -9,12 +9,12 @@ export interface AuditEvent {
 
 export const AUDIT_EVENTS: AuditEvent[] = [
   { time: '01:12', account: 'admin', action: '备份数据库', rows: 0 },
-  { time: '02:13', account: 'svc_agent', action: '读取 survey.csv', rows: 2000 },
+  { time: '02:13', account: 'svc_agent', action: '读取 qc_records.csv', rows: 2000 },
   { time: '02:14', account: 'svc_agent', action: '调用 send_email（外部收件人）', rows: 2000 },
   { time: '03:40', account: 'svc_agent', action: '调用 send_email（外部收件人）', rows: 0 },
   { time: '09:05', account: 'student_a', action: '导出统计结果', rows: 12 },
   { time: '09:30', account: 'student_b', action: '查看实验报告', rows: 0 },
-  { time: '14:22', account: 'student_a', action: '读取 survey.csv（脱敏版）', rows: 2000 },
+  { time: '14:22', account: 'student_a', action: '读取 qc_records.csv（脱敏版）', rows: 2000 },
   { time: '15:10', account: 'admin', action: '修改用户权限', rows: 0 }
 ];
 

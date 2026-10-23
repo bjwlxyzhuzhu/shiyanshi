@@ -5,6 +5,7 @@ import { PRESETS, SettingsError, publicModelSettings, saveModelSettings } from '
 import { authRequired, roleRequired, type AuthedRequest } from '../auth.js';
 import { db, hashPassword, nowIso } from '../db.js';
 import { callModelAudited } from '../ilab/aiAudit.js';
+import { TEACHER_GRADES } from './learning.js';
 
 /**
  * 管理员后台：大模型配置、师生名单导入与账号管理；教师可查看学生成绩。
@@ -272,11 +273,72 @@ adminRouter.get('/results', roleRequired('teacher', 'admin'), (req, res) => {
     SELECT s.id AS sessionId, u.username, COALESCE(u.display_name, u.username) AS name, u.class_name AS className, u.major,
            s.source, s.started_at AS startedAt, s.finished_at AS finishedAt, s.total_score AS totalScore,
            (SELECT COUNT(*) FROM step_records r WHERE r.session_id = s.id) AS stepsDone,
-           (SELECT COUNT(*) FROM step_records r WHERE r.session_id = s.id AND (r.bank_version IS NULL OR r.bank_version <> ?)) AS legacySteps
-    FROM sessions s JOIN users u ON u.id = s.user_id
+           (SELECT COUNT(*) FROM step_records r WHERE r.session_id = s.id AND (r.bank_version IS NULL OR r.bank_version <> ?)) AS legacySteps,
+           (SELECT MAX(p.correct) FROM prelab_attempts p WHERE p.user_id = u.id) AS prelabBest,
+           tr.grade AS teacherGrade, tr.comment AS teacherComment
+    FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN teacher_reviews tr ON tr.session_id = s.id
     WHERE u.role = 'student' ${className ? 'AND u.class_name = ?' : ''}
     ORDER BY u.class_name, u.username, s.id DESC LIMIT 5000
   `).all(...(className ? [BANK_VERSION, className] : [BANK_VERSION]));
   const classes = (db.prepare("SELECT DISTINCT class_name AS c FROM users WHERE role = 'student' AND class_name IS NOT NULL ORDER BY c").all() as Array<{ c: string }>).map((row) => row.c);
   res.json({ bankVersion: BANK_VERSION, totalSteps: STEPS.length, classes, results: rows });
+});
+
+/** 教师评价（成绩类型“教师评价报告”）：等级 + 评语，按会话保存，可修改 */
+adminRouter.put('/results/:sessionId/review', roleRequired('teacher', 'admin'), (req: AuthedRequest, res) => {
+  const sessionId = Number(req.params.sessionId);
+  const exists = db.prepare("SELECT s.id FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND u.role = 'student'").get(sessionId);
+  if (!exists) {
+    res.status(404).json({ code: 'NO_SESSION', message: '实验会话不存在' });
+    return;
+  }
+  const grade = String(req.body?.grade ?? '');
+  if (!(TEACHER_GRADES as readonly string[]).includes(grade)) {
+    res.status(400).json({ code: 'BAD_GRADE', message: `评价等级只能是：${TEACHER_GRADES.join('、')}` });
+    return;
+  }
+  const comment = cleanCell(String(req.body?.comment ?? ''), 500);
+  db.prepare(`
+    INSERT INTO teacher_reviews (session_id, teacher_id, grade, comment, updated_at) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET teacher_id = excluded.teacher_id, grade = excluded.grade, comment = excluded.comment, updated_at = excluded.updated_at
+  `).run(sessionId, req.user!.id, grade, comment, nowIso());
+  audit(req.user!.id, 'results.review', String(sessionId), { grade });
+  res.json({ ok: true, grade, comment });
+});
+
+// ---------------- AI 审计与伦理（管理员） ----------------
+
+/**
+ * 伦理与可信可控的运行证据：模型调用与兜底情况、输出过滤命中、算法公平性监测。
+ * 公平性监测：按专业比较已完成实验的平均分，样本足够（每组 ≥10）且差距 >10 分时提示复核评分规则与题目表述。
+ */
+adminRouter.get('/ai-audit', adminOnly, (_req, res) => {
+  const byScenario = db.prepare(`
+    SELECT COALESCE(scenario, '') AS scenario, COUNT(DISTINCT invocation_id) AS calls,
+           SUM(CASE WHEN dispatch_state = 'response_received' THEN 1 ELSE 0 END) AS received,
+           SUM(CASE WHEN dispatch_state IN ('http_error', 'timeout', 'network_error', 'bad_body') THEN 1 ELSE 0 END) AS failed,
+           SUM(CASE WHEN dispatch_state = 'not_configured' THEN 1 ELSE 0 END) AS notConfigured,
+           SUM(CASE WHEN final_source = 'rule' THEN 1 ELSE 0 END) AS ruleFallback,
+           SUM(COALESCE(prompt_tokens, 0)) AS promptTokens, SUM(COALESCE(completion_tokens, 0)) AS completionTokens
+    FROM ai_invocations GROUP BY scenario ORDER BY calls DESC
+  `).all();
+  const notes = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN text LIKE '%[已过滤]%' THEN 1 ELSE 0 END) AS filtered, SUM(CASE WHEN source = 'model' THEN 1 ELSE 0 END) AS model FROM tutor_notes").get() as { total: number; filtered: number | null; model: number | null };
+  const groups = db.prepare(`
+    SELECT COALESCE(u.major, '未填写专业') AS major, COUNT(*) AS n, AVG(s.total_score) AS mean
+    FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE u.role = 'student' AND s.finished_at IS NOT NULL GROUP BY major ORDER BY n DESC
+  `).all() as Array<{ major: string; n: number; mean: number }>;
+  const eligible = groups.filter((group) => group.n >= 10);
+  const gap = eligible.length >= 2 ? Math.max(...eligible.map((g) => g.mean)) - Math.min(...eligible.map((g) => g.mean)) : null;
+  res.json({
+    byScenario,
+    tutor: { total: Number(notes.total), filtered: Number(notes.filtered ?? 0), fromModel: Number(notes.model ?? 0) },
+    fairness: {
+      groups: groups.map((group) => ({ major: group.major, n: group.n, mean: Number(Number(group.mean).toFixed(1)) })),
+      gap: gap === null ? null : Number(gap.toFixed(1)),
+      threshold: 10,
+      minGroupSize: 10,
+      flagged: gap !== null && gap > 10
+    }
+  });
 });

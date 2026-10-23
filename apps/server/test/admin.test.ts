@@ -185,3 +185,66 @@ describe('管理员导入师生名单', () => {
     expect(results.json.results[0]).toMatchObject({ username: '2026010101', className: '机械2601', stepsDone: 1, legacySteps: 0 });
   });
 });
+
+describe('国家级评审整改：预习成绩、教师评价、跨学科、伦理审计', () => {
+  it('预习测验：题目不含答案；未答完不收；判分后给出解析并记录最好成绩', async () => {
+    const student = await login('2026010101', 'MyNewSecret2026');
+    const client = api(h.base, student.json.token);
+    const got = await client.get('/api/learning/prelab');
+    expect(got.json.questions).toHaveLength(10);
+    expect(got.text).not.toMatch(/"answer"|explain/);
+    expect((await client.post('/api/learning/prelab', { answers: { Q01: 2 } })).status).toBe(400);
+    const { PRELAB_KEY } = await import('../src/prelabKey.js');
+    const all = Object.fromEntries(Object.entries(PRELAB_KEY).map(([id, key]) => [id, key.answer]));
+    const wrongOne = { ...all, Q01: (all.Q01! + 1) % 4 };
+    const first = await client.post('/api/learning/prelab', { answers: wrongOne });
+    expect(first.json).toMatchObject({ correct: 9, total: 10 });
+    expect(first.json.results[0].explain).toBeTruthy();
+    const second = await client.post('/api/learning/prelab', { answers: all });
+    expect(second.json.summary).toMatchObject({ best: 10, latest: 10, attempts: 2 });
+  });
+
+  it('预习题目只考原理，不出现任何步骤的选项原文', async () => {
+    const { PRELAB_QUESTIONS } = await import('@zhian/shared');
+    const text = PRELAB_QUESTIONS.map((q) => `${q.stem}${q.options.join('')}`).join('');
+    for (const step of STEPS) {
+      for (const option of step.fields.flatMap((field) => field.options ?? []).filter((option) => option.length >= 6)) {
+        expect(text.includes(option), `${step.id}「${option}」`).toBe(false);
+      }
+    }
+  });
+
+  it('教师评价：教师可评、学生不可评；成绩表与报告显示预习成绩与教师评价', async () => {
+    const results = await api(h.base, teacherToken).get('/api/admin/results?className=机械2601');
+    const row = results.json.results.find((item: { username: string }) => item.username === '2026010101');
+    expect(row.prelabBest).toBe(10);
+    expect((await put(teacherToken, `/api/admin/results/${row.sessionId}/review`, { grade: '满分' })).status).toBe(400);
+    const student = await login('2026010101', 'MyNewSecret2026');
+    expect((await put(student.json.token, `/api/admin/results/${row.sessionId}/review`, { grade: '优秀' })).status).toBe(403);
+    expect((await put(teacherToken, `/api/admin/results/${row.sessionId}/review`, { grade: '良好', comment: '数据分级准确，应急顺序需加强。' })).json.ok).toBe(true);
+    const again = await api(h.base, teacherToken).get('/api/admin/results?className=机械2601');
+    expect(again.json.results.find((item: { sessionId: number }) => item.sessionId === row.sessionId)).toMatchObject({ teacherGrade: '良好' });
+    const report = await api(h.base, student.json.token).post('/api/ai/report', { sessionId: row.sessionId });
+    expect(report.json.contentMd).toContain('预习成绩：10/10');
+    expect(report.json.contentMd).toContain('教师评价：良好；数据分级准确');
+    expect(report.json.contentMd).toContain('跨学科学习经历');
+    const archive = await api(h.base, student.json.token).get('/api/learning/archive');
+    expect(archive.json.sessions[0].teacherReview.grade).toBe('良好');
+  });
+
+  it('AI 审计与公平性监测：仅管理员；样本足够且组间差距大时提示复核', async () => {
+    expect((await api(h.base, teacherToken).get('/api/admin/ai-audit')).status).toBe(403);
+    const insertUser = db.prepare("INSERT INTO users (username, password_hash, role, points, created_at, major) VALUES (?, '!', 'student', 0, ?, ?)");
+    const insertSession = db.prepare("INSERT INTO sessions (user_id, started_at, finished_at, total_score) VALUES (?, ?, ?, ?)");
+    const now = new Date().toISOString();
+    for (let i = 0; i < 10; i++) {
+      for (const [major, score] of [['合成专业甲', 90], ['合成专业乙', 70]] as const) {
+        const id = Number(insertUser.run(`fair_${major}_${i}`, now, major).lastInsertRowid);
+        insertSession.run(id, now, now, score);
+      }
+    }
+    const audit = await api(h.base, adminToken).get('/api/admin/ai-audit');
+    expect(audit.json.fairness).toMatchObject({ gap: 20, flagged: true });
+    expect(audit.json.byScenario.some((row: { scenario: string }) => row.scenario === 'admin:connectivity_test')).toBe(true);
+  });
+});

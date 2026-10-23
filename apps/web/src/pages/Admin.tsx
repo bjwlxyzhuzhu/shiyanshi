@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BRAND, IMPORT_TEMPLATE } from '@zhian/shared';
-import { api, type AdminUser, type ImportResult, type ModelPreset, type ModelSettings, type ModelTestResult, type ResultRow } from '../api';
+import { api, type AdminUser, type AiAuditData, type ImportResult, type ModelPreset, type ModelSettings, type ModelTestResult, type ResultRow } from '../api';
 import { useSessionStore } from '../stores/session';
 import { ChangePassword } from './ChangePassword';
 
 const DEPLOYMENT_OPTIONS = ['公有云服务', '私有化部署', '混合服务', '本地运行'];
+const TEACHER_GRADES = ['优秀', '良好', '合格', '不合格'];
 const ROLE_LABEL: Record<string, string> = { student: '学生', teacher: '教师', admin: '管理员' };
 /** 截至 2026-10-23 的 DeepSeek 文档；仅作填写提示，最终以服务商控制台为准 */
 const VERSION_HINT: Record<string, string> = { 'deepseek-flash': 'DeepSeek-V4.1-Flash-1017' };
@@ -369,9 +370,20 @@ function ResultsTab() {
   const [data, setData] = useState<{ bankVersion: string; totalSteps: number; classes: string[]; results: ResultRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.admin.results(className).then(setData).catch((err) => setError(errorText(err)));
-  }, [className]);
+  const [editing, setEditing] = useState<{ sessionId: number; grade: string; comment: string } | null>(null);
+  const load = () => api.admin.results(className).then(setData).catch((err) => setError(errorText(err)));
+  useEffect(() => { void load(); }, [className]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveReview = async () => {
+    if (!editing) return;
+    try {
+      await api.admin.review(editing.sessionId, editing.grade, editing.comment);
+      setEditing(null);
+      await load();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
 
   const rows = data?.results ?? [];
   const finished = useMemo(() => rows.filter((row) => row.finishedAt), [rows]);
@@ -389,8 +401,8 @@ function ResultsTab() {
           className="ghost small"
           disabled={!rows.length}
           onClick={() => downloadCsv(`实验成绩-${className || '全部'}-${stamp()}.csv`, [
-            ['账号', '姓名', '班级', '专业', '会话', '来源', '开始时间', '完成时间', '已提交步骤', '总分', '旧版题库步骤'],
-            ...rows.map((row) => [row.username, row.name, row.className, row.major, row.sessionId, row.source, row.startedAt, row.finishedAt, row.stepsDone, Number(row.totalScore).toFixed(1), row.legacySteps])
+            ['账号', '姓名', '班级', '专业', '会话', '来源', '开始时间', '完成时间', '已提交步骤', '操作成绩', '预习成绩（满分 10）', '教师评价', '教师评语', '旧版题库步骤'],
+            ...rows.map((row) => [row.username, row.name, row.className, row.major, row.sessionId, row.source, row.startedAt, row.finishedAt, row.stepsDone, Number(row.totalScore).toFixed(1), row.prelabBest, row.teacherGrade, row.teacherComment, row.legacySteps])
           ])}
         >导出 CSV</button>
       </div>
@@ -398,7 +410,7 @@ function ResultsTab() {
       {error ? <p className="error-text" role="alert">{error}</p> : null}
       <div className="table-wrap">
         <table className="admin-table">
-          <thead><tr><th>账号</th><th>姓名</th><th>班级</th><th>专业</th><th>开始</th><th>进度</th><th>总分</th><th>备注</th></tr></thead>
+          <thead><tr><th>账号</th><th>姓名</th><th>班级</th><th>专业</th><th>开始</th><th>进度</th><th>操作成绩</th><th>预习</th><th>教师评价</th><th>备注</th></tr></thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.sessionId}>
@@ -406,6 +418,25 @@ function ResultsTab() {
                 <td>{new Date(row.startedAt).toLocaleString('zh-CN')}</td>
                 <td>{row.finishedAt ? '已完成' : `${row.stepsDone} / ${data?.totalSteps ?? 24}`}</td>
                 <td>{Number(row.totalScore).toFixed(1)}</td>
+                <td>{row.prelabBest ?? '—'}</td>
+                <td>
+                  {editing?.sessionId === row.sessionId ? (
+                    <div className="review-editor">
+                      <select value={editing.grade} onChange={(e) => setEditing({ ...editing, grade: e.target.value })} aria-label="评价等级">
+                        {TEACHER_GRADES.map((grade) => <option key={grade}>{grade}</option>)}
+                      </select>
+                      <textarea value={editing.comment} maxLength={500} placeholder="评语（可选，500 字以内）" onChange={(e) => setEditing({ ...editing, comment: e.target.value })} />
+                      <div className="row-actions">
+                        <button type="button" className="primary small" onClick={() => void saveReview()}>保存</button>
+                        <button type="button" className="ghost small" onClick={() => setEditing(null)}>取消</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" className="ghost small" title={row.teacherComment ?? ''} onClick={() => setEditing({ sessionId: row.sessionId, grade: row.teacherGrade ?? '良好', comment: row.teacherComment ?? '' })}>
+                      {row.teacherGrade ?? '评价'}
+                    </button>
+                  )}
+                </td>
                 <td>{[row.source === 'ilab' ? '实验空间' : row.source === 'synthetic' ? '合成演示' : '', row.legacySteps ? `含旧版题库 ${row.legacySteps} 步` : ''].filter(Boolean).join('；')}</td>
               </tr>
             ))}
@@ -416,9 +447,66 @@ function ResultsTab() {
   );
 }
 
+// ---------------- AI 审计与伦理 ----------------
+
+const SCENARIO_NAME: Record<string, string> = {
+  'tutor:pre': 'AI 导师 · 实验前',
+  'tutor:during': 'AI 导师 · 实验中',
+  'tutor:post': 'AI 导师 · 实验后',
+  'admin:connectivity_test': '管理员连接测试'
+};
+
+function AuditTab() {
+  const [data, setData] = useState<AiAuditData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { api.admin.aiAudit().then(setData).catch((err) => setError(errorText(err))); }, []);
+  if (!data) return <p className="muted">{error ?? '加载中…'}</p>;
+  const { fairness } = data;
+  return (
+    <div className="admin-section">
+      <p className="muted">本页是“伦理安全、可信可控”的运行证据：模型调用是否真实发生、失败时是否规则兜底、输出是否触发个人信息过滤，以及按专业的成绩差异监测。成绩全部由确定性规则给出，大模型不参与打分。</p>
+      <h4>模型调用（按场景）</h4>
+      <div className="table-wrap">
+        <table className="admin-table">
+          <thead><tr><th>场景</th><th>调用</th><th>收到响应</th><th>失败</th><th>未配置</th><th>规则兜底</th><th>输入 / 输出 token</th></tr></thead>
+          <tbody>
+            {data.byScenario.length ? data.byScenario.map((row) => (
+              <tr key={row.scenario}>
+                <td>{SCENARIO_NAME[row.scenario] ?? (row.scenario.startsWith('review:') ? `安全助手评审 ${row.scenario.slice(7)}` : row.scenario || '—')}</td>
+                <td>{row.calls}</td><td>{row.received}</td><td>{row.failed}</td><td>{row.notConfigured}</td><td>{row.ruleFallback}</td>
+                <td>{row.promptTokens} / {row.completionTokens}</td>
+              </tr>
+            )) : <tr><td colSpan={7} className="muted">暂无调用记录</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <h4>AI 导师输出</h4>
+      <p className="small">共 {data.tutor.total} 条指导，其中来自大模型 {data.tutor.fromModel} 条；触发个人信息过滤（手机号、身份证号等被替换为“[已过滤]”）{data.tutor.filtered} 条。</p>
+      <h4>算法公平性监测（按专业比较已完成实验的平均分）</h4>
+      <div className="table-wrap">
+        <table className="admin-table">
+          <thead><tr><th>专业</th><th>完成人次</th><th>平均分</th></tr></thead>
+          <tbody>
+            {fairness.groups.length ? fairness.groups.map((group) => (
+              <tr key={group.major} className={group.n < fairness.minGroupSize ? 'st-skip' : ''}><td>{group.major}</td><td>{group.n}</td><td>{group.mean}</td></tr>
+            )) : <tr><td colSpan={3} className="muted">暂无已完成的实验</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <p className={`small${fairness.flagged ? ' flag-warn' : ''}`}>
+        {fairness.gap === null
+          ? `每组完成人次达到 ${fairness.minGroupSize} 后开始比较（灰色行样本不足）。`
+          : fairness.flagged
+            ? `组间平均分差 ${fairness.gap} 分，超过 ${fairness.threshold} 分：请教学团队复核是否存在题目表述、先修知识或评分规则对某专业不利的情况，并记录复核结论。`
+            : `组间平均分差 ${fairness.gap} 分，未超过 ${fairness.threshold} 分的复核线。`}
+      </p>
+    </div>
+  );
+}
+
 // ---------------- 外框 ----------------
 
-type Tab = 'model' | 'import' | 'users' | 'results';
+type Tab = 'model' | 'import' | 'users' | 'results' | 'audit';
 
 export function Admin() {
   const user = useSessionStore((state) => state.user);
@@ -426,7 +514,7 @@ export function Admin() {
   const logout = useSessionStore((state) => state.logout);
   const isAdmin = user?.role === 'admin';
   const tabs: Array<{ id: Tab; label: string }> = isAdmin
-    ? [{ id: 'model', label: '大模型配置' }, { id: 'import', label: '师生导入' }, { id: 'users', label: '账号管理' }, { id: 'results', label: '学生成绩' }]
+    ? [{ id: 'model', label: '大模型配置' }, { id: 'import', label: '师生导入' }, { id: 'users', label: '账号管理' }, { id: 'results', label: '学生成绩' }, { id: 'audit', label: 'AI 审计与伦理' }]
     : [{ id: 'results', label: '学生成绩' }];
   const [tab, setTab] = useState<Tab>(tabs[0]!.id);
   const [changing, setChanging] = useState(false);
@@ -454,6 +542,7 @@ export function Admin() {
         {tab === 'import' ? <ImportTab /> : null}
         {tab === 'users' ? <UsersTab /> : null}
         {tab === 'results' ? <ResultsTab /> : null}
+        {tab === 'audit' ? <AuditTab /> : null}
       </main>
     </div>
   );

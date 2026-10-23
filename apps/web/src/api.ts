@@ -1,5 +1,6 @@
 import type {
   AiReviewResponse,
+  PrelabQuestion,
   LevelAttainment,
   ChartData,
   PreviewImage,
@@ -50,6 +51,20 @@ export interface ArchiveItem {
   source: string;
   profile: ProfileItem[];
   ladder: LevelAttainment[];
+  teacherReview: { grade: string; comment: string; updatedAt: string } | null;
+}
+
+export interface PrelabSummary {
+  latest: number | null;
+  best: number | null;
+  attempts: number;
+  total: number;
+}
+
+export interface AiAuditData {
+  byScenario: Array<{ scenario: string; calls: number; received: number; failed: number; notConfigured: number; ruleFallback: number; promptTokens: number; completionTokens: number }>;
+  tutor: { total: number; filtered: number; fromModel: number };
+  fairness: { groups: Array<{ major: string; n: number; mean: number }>; gap: number | null; threshold: number; minGroupSize: number; flagged: boolean };
 }
 
 export interface IlabIssue {
@@ -175,6 +190,9 @@ export interface ResultRow {
   totalScore: number;
   stepsDone: number;
   legacySteps: number;
+  prelabBest: number | null;
+  teacherGrade: string | null;
+  teacherComment: string | null;
 }
 
 const TOKEN_KEY = 'zhian.token';
@@ -251,6 +269,9 @@ export const api = {
     resetPassword: (id: number) => request<{ username: string; password: string }>(`/admin/users/${id}/reset-password`, { method: 'POST' }),
     setDisabled: (id: number, disabled: boolean) =>
       request<{ ok: boolean }>(`/admin/users/${id}/status`, { method: 'POST', body: JSON.stringify({ disabled }) }),
+    review: (sessionId: number, grade: string, comment: string) =>
+      request<{ ok: boolean }>(`/admin/results/${sessionId}/review`, { method: 'PUT', body: JSON.stringify({ grade, comment }) }),
+    aiAudit: () => request<AiAuditData>('/admin/ai-audit'),
     results: (className: string) =>
       request<{ bankVersion: string; totalSteps: number; classes: string[]; results: ResultRow[] }>(`/admin/results?className=${encodeURIComponent(className)}`)
   },
@@ -296,6 +317,13 @@ export const api = {
   process: (sessionId: number) => request<ProcessSummary>(`/learning/sessions/${sessionId}/process`),
 
   archive: () => request<{ sessions: ArchiveItem[] }>('/learning/archive'),
+
+  prelab: () => request<{ questions: PrelabQuestion[]; summary: PrelabSummary }>('/learning/prelab'),
+
+  submitPrelab: (answers: Record<string, number>) =>
+    request<{ correct: number; total: number; results: Array<{ id: string; chosen: number; correct: boolean; answer: number; explain: string }>; summary: PrelabSummary }>(
+      '/learning/prelab', { method: 'POST', body: JSON.stringify({ answers }) }
+    ),
 
   presence: (action: 'enter' | 'heartbeat' | 'leave') =>
     request<SeatStatus>(`/presence/${action}`, { method: 'POST', keepalive: action === 'leave' }),

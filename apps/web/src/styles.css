@@ -610,3 +610,16 @@ kbd {
   :root { --inset: 16px; }
   .admin-top .html-top-actions { flex-wrap: wrap; }
 }
+.ladder-pos { display: block; color: var(--cyan); margin-top: 2px; }
+
+/* ---------- 预习测验 ---------- */
+.prelab { display: grid; gap: 12px; }
+.prelab fieldset { margin: 0; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 10px; display: grid; gap: 4px; }
+.prelab fieldset.ok { border-color: var(--success); }
+.prelab fieldset.bad { border-color: var(--danger); }
+.prelab legend { padding: 0 4px; font-size: 15px; }
+.prelab .check.answer { color: var(--success); }
+.review-editor { display: grid; gap: 6px; min-width: 260px; }
+.review-editor textarea { min-height: 60px; padding: 6px 8px; border-radius: var(--r-control); border: 1px solid var(--border); background: #0c1620; color: var(--text); font: inherit; font-size: 14px; }
+.flag-warn { color: var(--amber); }
+.primary.small { min-height: 34px; padding: 0 12px; font-size: 14px; }

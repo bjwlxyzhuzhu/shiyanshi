@@ -9,8 +9,8 @@ const BEST: Record<string, StepInput> = {
   S03: { plans: joinList(['数据泄露应急预案', '服务器过温与供电异常处置预案', '火灾报警与疏散预案（含集合点）', '液冷漏液处置预案', '有害内容输出处置预案', '智能体越权处置预案', '应急联系人与上报路径']) },
   S04: { checks: joinList(['核对接地合格记录与标识，缺记录则报告', '只读查看 UPS/PDU 告警指示', '检查进出风无遮挡、盲板与机箱盖在位', '确认安全出口、报警点与集合点位置', '确认疏散与检修通道畅通']), inletC: 29.5, inletVerdict: '超出档案允许范围，报告值班运维' },
   S05: Object.fromEntries(DATA_COLUMNS.map((column) => [`col_${column}`, ({
-    学号: '个人信息', 姓名: '个人信息', 手机号: '个人信息', 身份证号: '敏感个人信息',
-    专业: '一般数据', 满意度评分: '一般数据', 健康状况自述: '敏感个人信息'
+    工号: '个人信息', 姓名: '个人信息', 手机号: '个人信息', 身份证号: '敏感个人信息',
+    班组: '一般数据', 缺陷检测结果: '一般数据', 职业健康体检结论: '敏感个人信息'
   } as Record<string, string>)[column]!])),
   S06: { name: '假名化', phone: '删除', idCard: '删除', health: '泛化为类别', photo: bestImageDeid().option, strength: bestImageDeid().strength },
   S07: { missing: joinList(['同意范围覆盖模型训练', '已约定数据保存期限']), conclusion: '补充授权后可用' },

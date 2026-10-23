@@ -64,6 +64,8 @@ export interface AbilityLevel {
   name: string;
   goal: string;
   elements: string[];
+  /** 对标的产业岗位能力（智能制造企业与算力中心），依据岗位职责归纳，非官方职业标准原文 */
+  positions: string[];
   steps: string[];
   /** 达成要求：本层级得分率 */
   passRatio: number;
@@ -75,16 +77,19 @@ export const ABILITY_LEVELS: AbilityLevel[] = [
   {
     id: 'L1', name: '安全认知与规范操作', goal: '能识别人工智能实验中的人员、数据、设备风险，按规范完成准入、巡检、清理和上电操作。',
     elements: ['安全制度与准入', '风险辨识', '数据分级', '设备与环境规范'],
+    positions: ['产线数据标注与数据管理员：按分级规则处理含个人信息的工业数据', '算力机房值守人员：按规程只读巡检并及时报告'],
     steps: ['S01', 'S02', 'S03', 'S04', 'S05', 'S09', 'S11', 'S18'], passRatio: 0.6, excellentRatio: 0.85
   },
   {
     id: 'L2', name: '综合设计与安全配置', goal: '能综合人工智能、图像处理与网络知识，设计脱敏、授权、密钥、内容安全和智能体权限方案。',
     elements: ['多课程知识综合', '隐私与可用性权衡', '最小权限设计', '报告撰写'],
+    positions: ['工业 AI 应用工程师：设计数据脱敏、授权核查与智能体权限方案', '数据安全专员：评估隐私风险与数据可用性'],
     steps: ['S06', 'S07', 'S12', 'S14', 'S15', 'S16', 'S22'], passRatio: 0.6, excellentRatio: 0.85
   },
   {
     id: 'L3', name: '复杂问题研判与应急处置', goal: '能基于仿真数据建模分析、权衡阈值与参数，完成泄露、过温等突发事件的应急决策与复盘整改。',
     elements: ['数据驱动研判', '模型参数权衡', '应急决策', '复盘整改'],
+    positions: ['AI 系统安全运维工程师：依据仿真数据研判过温、投毒与泄露事件并组织处置', '安全事件响应负责人：分级上报、追溯与整改闭环'],
     steps: ['S08', 'S10', 'S13', 'S17', 'S19', 'S20', 'S21', 'S23'], passRatio: 0.6, excellentRatio: 0.85
   }
 ];
@@ -117,5 +122,28 @@ export function buildLadder(records: Array<{ stepId: string; score: number; maxS
     const ratio = max > 0 ? score / max : 0;
     const status = items.length < level.steps.length ? '未完成' : ratio >= level.excellentRatio ? '优秀' : ratio >= level.passRatio ? '达成' : '未达成';
     return { id: level.id, name: level.name, score: Number(score.toFixed(1)), max, ratio: Number(ratio.toFixed(3)), submitted: items.length, total: level.steps.length, status };
+  });
+}
+
+export interface CourseAttainment {
+  id: string;
+  name: string;
+  teacher: string;
+  /** 本课程知识点关联步骤的得分合计（同一步骤关联多门课程时各计一次） */
+  score: number;
+  max: number;
+  ratio: number;
+  stepsDone: number;
+  stepsTotal: number;
+}
+
+/** 跨学科学习经历：按课程统计关联步骤的得分率，纳入能力画像与报告 */
+export function buildCourseAttainment(records: Array<{ stepId: string; score: number; maxScore: number }>): CourseAttainment[] {
+  return COURSES.map((course) => {
+    const steps = [...new Set(KNOWLEDGE_POINTS.filter((point) => point.course === course.id).flatMap((point) => point.steps))];
+    const done = records.filter((record) => steps.includes(record.stepId));
+    const score = done.reduce((sum, record) => sum + record.score, 0);
+    const max = done.reduce((sum, record) => sum + record.maxScore, 0);
+    return { id: course.id, name: course.name, teacher: course.teacher, score: Number(score.toFixed(1)), max, ratio: max ? Number((score / max).toFixed(3)) : 0, stepsDone: done.length, stepsTotal: steps.length };
   });
 }

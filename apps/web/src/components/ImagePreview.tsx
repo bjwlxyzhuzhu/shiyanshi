@@ -29,7 +29,7 @@ function Canvas({ pixels, width, height, label }: { pixels: number[] | null; wid
   );
 }
 
-/** 门禁抓拍图像：处理前后对比（程序合成图，非真实人像） */
+/** 工位摄像头图像：处理前后对比（程序合成图，非真实人像） */
 export function ImagePreview({ image }: { image: PreviewImage }) {
   return (
     <div className="image-preview">

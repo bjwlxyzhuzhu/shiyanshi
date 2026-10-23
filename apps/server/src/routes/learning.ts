@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { COURSES, KNOWLEDGE_POINTS, buildLadder, buildProfile } from '@zhian/shared';
+import { COURSES, KNOWLEDGE_POINTS, PRELAB_QUESTIONS, buildCourseAttainment, buildLadder, buildProfile } from '@zhian/shared';
 import { authRequired, type AuthedRequest } from '../auth.js';
-import { db } from '../db.js';
+import { db, nowIso } from '../db.js';
+import { PRELAB_KEY } from '../prelabKey.js';
 
 /**
  * 过程评价与成长档案。过程指标只描述学习过程，不改变 100 分制成绩；
@@ -68,10 +69,47 @@ learningRouter.get('/archive', authRequired, (req: AuthedRequest, res) => {
       submittedSteps: records.length,
       source: session.source,
       profile: buildProfile(records),
-      ladder: buildLadder(records)
+      ladder: buildLadder(records),
+      teacherReview: teacherReview(session.id)
     };
   });
   res.json({ sessions: items });
+});
+
+export const TEACHER_GRADES = ['优秀', '良好', '合格', '不合格'] as const;
+
+export function prelabSummary(userId: number): { latest: number | null; best: number | null; attempts: number; total: number } {
+  const row = db.prepare('SELECT COUNT(*) AS n, MAX(correct) AS best FROM prelab_attempts WHERE user_id = ?').get(userId) as { n: number; best: number | null };
+  const latest = db.prepare('SELECT correct FROM prelab_attempts WHERE user_id = ? ORDER BY id DESC LIMIT 1').get(userId) as { correct: number } | undefined;
+  return { latest: latest?.correct ?? null, best: row.best, attempts: Number(row.n), total: PRELAB_QUESTIONS.length };
+}
+
+export function teacherReview(sessionId: number): { grade: string; comment: string; updatedAt: string } | null {
+  const row = db.prepare('SELECT grade, comment, updated_at FROM teacher_reviews WHERE session_id = ?').get(sessionId) as { grade: string; comment: string; updated_at: string } | undefined;
+  return row ? { grade: row.grade, comment: row.comment, updatedAt: row.updated_at } : null;
+}
+
+/** 预习测验：题目不含答案；提交后返回逐题对错与解析，可重复作答，记录最近与最好成绩 */
+learningRouter.get('/prelab', authRequired, (req: AuthedRequest, res) => {
+  res.json({ questions: PRELAB_QUESTIONS, summary: prelabSummary(req.user!.id) });
+});
+
+learningRouter.post('/prelab', authRequired, (req: AuthedRequest, res) => {
+  const answers = (req.body?.answers ?? {}) as Record<string, unknown>;
+  const results = PRELAB_QUESTIONS.map((question) => {
+    const raw = answers[question.id];
+    const chosen = Number.isInteger(raw) && Number(raw) >= 0 && Number(raw) < question.options.length ? Number(raw) : null;
+    const key = PRELAB_KEY[question.id]!;
+    return { id: question.id, chosen, correct: chosen === key.answer, answer: key.answer, explain: key.explain };
+  });
+  if (results.some((item) => item.chosen === null)) {
+    res.status(400).json({ code: 'INCOMPLETE', message: '请完成全部题目后再提交' });
+    return;
+  }
+  const correct = results.filter((item) => item.correct).length;
+  db.prepare('INSERT INTO prelab_attempts (user_id, answers_json, correct, total, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(req.user!.id, JSON.stringify(Object.fromEntries(results.map((item) => [item.id, item.chosen]))), correct, results.length, nowIso());
+  res.json({ correct, total: results.length, results, summary: prelabSummary(req.user!.id) });
 });
 
 /** 报告共用：阶梯能力、过程评价、课程覆盖、导师反思（均为模板文字，不调用模型） */
@@ -80,13 +118,23 @@ export function reportSections(sessionId: number): string[] {
   const records = rows.map((row) => ({ stepId: row.step_id, score: Number(row.score), maxScore: Number(row.max_score) }));
   const ladder = buildLadder(records);
   const process = processSummary(sessionId);
+  const attainment = buildCourseAttainment(records);
   const courses = COURSES.map((course) => {
     const points = KNOWLEDGE_POINTS.filter((point) => point.course === course.id);
     const covered = points.filter((point) => point.steps.some((stepId) => records.some((record) => record.stepId === stepId)));
-    return `${course.name}：覆盖知识点 ${covered.length}/${points.length}`;
+    const item = attainment.find((entry) => entry.id === course.id)!;
+    return `${course.name}：覆盖知识点 ${covered.length}/${points.length}；关联步骤得分率 ${item.max ? Math.round(item.ratio * 100) : 0}%（${item.stepsDone}/${item.stepsTotal} 步）`;
   });
   const reflection = db.prepare("SELECT text, source FROM tutor_notes WHERE session_id = ? AND phase = 'post' ORDER BY id DESC LIMIT 1").get(sessionId) as { text: string; source: string } | undefined;
+  const owner = db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(sessionId) as { user_id: number } | undefined;
+  const prelab = owner ? prelabSummary(owner.user_id) : null;
+  const review = teacherReview(sessionId);
   return [
+    '## 成绩构成',
+    '- 操作成绩：24 步服务端评分（满分 100）',
+    `- 预习成绩：${prelab && prelab.best !== null ? `${prelab.best}/${prelab.total}（最好成绩，共作答 ${prelab.attempts} 次；不计入 100 分）` : '未参加预习测验'}`,
+    `- 教师评价：${review ? `${review.grade}${review.comment ? `；${review.comment}` : ''}` : '待教师评价'}`,
+    '',
     '## 阶梯能力达成',
     ...ladder.map((level) => `- ${level.id} ${level.name}：${level.score}/${level.max}（${Math.round(level.ratio * 100)}%），${level.status}（已提交 ${level.submitted}/${level.total} 步）`),
     '',
@@ -96,7 +144,7 @@ export function reportSections(sessionId: number): string[] {
     `- 使用提示 ${process.hintsUsed} 次；请求 AI 实验导师 ${process.tutorRequests} 次；请求安全助手评审 ${process.reviewRequests} 次`,
     ...(process.legacySteps ? [`- 有 ${process.legacySteps} 步为过程采集上线前的历史记录，无过程数据`] : []),
     '',
-    '## 多课程知识点覆盖',
+    '## 跨学科学习经历（多课程知识点覆盖与得分率）',
     ...courses.map((line) => `- ${line}`),
     '',
     '## AI 实验导师反思建议',

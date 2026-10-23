@@ -167,8 +167,8 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
 
   S05: (input) => {
     const truth: Record<string, string> = {
-      学号: '个人信息', 姓名: '个人信息', 手机号: '个人信息', 身份证号: '敏感个人信息',
-      专业: '一般数据', 满意度评分: '一般数据', 健康状况自述: '敏感个人信息'
+      工号: '个人信息', 姓名: '个人信息', 手机号: '个人信息', 身份证号: '敏感个人信息',
+      班组: '一般数据', 缺陷检测结果: '一般数据', 职业健康体检结论: '敏感个人信息'
     };
     const wrong = DATA_COLUMNS.filter((column) => text(input, `col_${column}`) !== truth[column]);
     const ratio = (DATA_COLUMNS.length - wrong.length) / DATA_COLUMNS.length;
@@ -467,7 +467,7 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
         时间窗内事件: eventsInWindow(window).map((event) => `${event.time} ${event.account} ${event.action}`).join('；') || '无',
         chart
       },
-      feedback: accountRight && windowRight ? '追溯准确：svc_agent 在 02:00–04:00 外发了问卷数据。' : '请查看“外部发送”出现的时段，并定位对应账号。'
+      feedback: accountRight && windowRight ? '追溯准确：svc_agent 在 02:00–04:00 外发了企业质检数据。' : '请查看“外部发送”出现的时段，并定位对应账号。'
     };
   },
 
