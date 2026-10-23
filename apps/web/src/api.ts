@@ -1,5 +1,6 @@
 import type {
   AiReviewResponse,
+  Exploration,
   PrelabQuestion,
   Term,
   LevelAttainment,
@@ -53,6 +54,12 @@ export interface ArchiveItem {
   profile: ProfileItem[];
   ladder: LevelAttainment[];
   teacherReview: { grade: string; comment: string; updatedAt: string } | null;
+}
+
+export interface ExploreProgress {
+  id: string;
+  trials: Array<{ params: Record<string, number>; metrics: Record<string, number> }>;
+  report: { hypothesis: string; conclusion: string; feedback: string; created_at: string } | null;
 }
 
 export interface PrelabSummary {
@@ -353,6 +360,14 @@ export const api = {
   process: (sessionId: number) => request<ProcessSummary>(`/learning/sessions/${sessionId}/process`),
 
   archive: () => request<{ sessions: ArchiveItem[] }>('/learning/archive'),
+
+  explore: () => request<{ explorations: Exploration[]; minTrials: number; progress: ExploreProgress[] }>('/explore'),
+
+  runExplore: (id: string, params: Record<string, number>, sessionId?: number) =>
+    request<{ params: Record<string, number>; metrics: Record<string, number>; trials: ExploreProgress['trials'] }>(`/explore/${id}/run`, { method: 'POST', body: JSON.stringify({ params, sessionId }) }),
+
+  concludeExplore: (id: string, hypothesis: string, conclusion: string, sessionId?: number) =>
+    request<{ feedback: string; trend: string[] }>(`/explore/${id}/conclude`, { method: 'POST', body: JSON.stringify({ hypothesis, conclusion, sessionId }) }),
 
   prelab: () => request<{ questions: PrelabQuestion[]; summary: PrelabSummary }>('/learning/prelab'),
 

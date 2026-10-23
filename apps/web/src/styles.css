@@ -658,3 +658,13 @@ kbd {
 .course-form { padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--surface); display: grid; gap: 12px; }
 .teacher-picks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
 .field-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+
+/* ---------- 研究探索 ---------- */
+.explore { display: grid; gap: 10px; }
+.explore-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.explore-tabs button { min-height: 34px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 13px; }
+.explore-tabs button.on { border-color: var(--amber); color: var(--text); }
+.explore-vars { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.explore-vars .field { width: 130px; }
+.explore textarea { width: 100%; padding: 6px 8px; border-radius: var(--r-control); border: 1px solid var(--border); background: #1b2a37; color: var(--text); font: inherit; font-size: 14px; }
+.explore-feedback { white-space: pre-wrap; margin: 0; padding: 10px 12px; border-left: 3px solid var(--cyan); background: rgba(103, 210, 227, 0.08); font: inherit; font-size: 14px; }

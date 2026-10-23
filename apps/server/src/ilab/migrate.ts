@@ -274,4 +274,31 @@ export function migrate(db: DatabaseSync): void {
     addColumn(db, 'users', 'department', 'TEXT');
     db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(5, new Date().toISOString());
   }
+
+  if (!applied.has(6)) {
+    // 研究探索：试验参数与仿真指标、假设与结论（不计分）
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS explore_trials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        session_id INTEGER,
+        exp_id TEXT NOT NULL,
+        params_json TEXT NOT NULL,
+        metrics_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_explore_trials_user ON explore_trials (user_id, exp_id, id);
+      CREATE TABLE IF NOT EXISTS explore_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        session_id INTEGER,
+        exp_id TEXT NOT NULL,
+        hypothesis TEXT NOT NULL,
+        conclusion TEXT NOT NULL,
+        feedback TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(6, new Date().toISOString());
+  }
 }

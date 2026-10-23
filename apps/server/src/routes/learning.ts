@@ -3,6 +3,7 @@ import { COURSES, KNOWLEDGE_POINTS, PRELAB_QUESTIONS, buildCourseAttainment, bui
 import { authRequired, type AuthedRequest } from '../auth.js';
 import { db, nowIso } from '../db.js';
 import { PRELAB_KEY } from '../prelabKey.js';
+import { exploreSummary } from './explore.js';
 
 /**
  * 过程评价与成长档案。过程指标只描述学习过程，不改变 100 分制成绩；
@@ -146,6 +147,9 @@ export function reportSections(sessionId: number): string[] {
     '',
     '## 跨学科学习经历（多课程知识点覆盖与得分率）',
     ...courses.map((line) => `- ${line}`),
+    '',
+    '## 研究探索（选做，不计分）',
+    ...(owner && exploreSummary(owner.user_id).length ? exploreSummary(owner.user_id) : ['未参加研究探索。']),
     '',
     '## AI 实验导师反思建议',
     reflection ? `（来源：${reflection.source === 'model' ? '大模型' : '知识库规则'}）` : '尚未生成；可在 S24 请求“实验后反思与改进建议”。',

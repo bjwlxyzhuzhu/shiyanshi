@@ -6,6 +6,7 @@ import { adminRouter } from './routes/admin.js';
 import { aiRouter } from './routes/ai.js';
 import { authRouter } from './routes/auth.js';
 import { experimentRouter } from './routes/experiment.js';
+import { exploreRouter } from './routes/explore.js';
 import { learningRouter } from './routes/learning.js';
 import { authRequired } from './auth.js';
 import { netRouter, presenceRouter, requireSeat } from './presence.js';
@@ -33,6 +34,7 @@ export function createApp(): express.Express {
   app.use('/api/ai', aiRouter);
   app.use('/api/learning', learningRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/explore', exploreRouter);
 
   app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     // 错误日志只记录脱敏后的路径，不输出 ticket/token

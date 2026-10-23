@@ -7,3 +7,4 @@ export * from './project.js';
 export * from './deviceProfile.js';
 export * from './accounts.js';
 export * from './prelab.js';
+export * from './explore.js';

@@ -8,16 +8,26 @@ export interface TeamMember {
   name: string;
   title: string;
   degree?: string;
-  course: string;
+  /** 人员类别：申报书要求产业技术专家在“承担任务”栏明确标注 */
+  category: '主讲教师' | '产业技术专家';
+  /** 主讲课程（主讲教师） */
+  course?: string;
+  /** 产业单位与职务（产业技术专家） */
+  org?: string;
+  position?: string;
   role: string;
 }
 
 export const TEAM: TeamMember[] = [
-  { order: 1, name: '朱丽叶', title: '讲师', degree: '硕士', course: '人工智能概论', role: '项目负责人：总体教学设计与实验系统建设，大模型与智能体应用、数据安全与模型安全模块，组织校内教学应用' },
-  { order: 2, name: '张雪亚', title: '副教授', degree: '硕士', course: '实验室安全', role: '机房安全规程教学改编与审核：准入与区域授权、只读巡检、分情景应急（过温/火警/漏液）、安全事件报告规范' },
-  { order: 3, name: '李亚峰', title: '教授', degree: '博士', course: '数学建模', role: 'GPU 热路微分方程模型、检测阈值与 F1 权衡、公平性指标与评分模型设计' },
-  { order: 4, name: '樊攀', title: '副教授', degree: '博士', course: '数字图像处理', role: '图像去标识化实验模块（空间域滤波、马赛克、可识别性评价），三维场景视觉效果指导' },
-  { order: 5, name: '陈冬', title: '副教授', degree: '博士', course: '计算机网络', role: 'API 密钥与访问控制、智能体外发链路拦截、日志审计与溯源，系统网络与安全部署' }
+  { order: 1, name: '朱丽叶', title: '讲师', degree: '硕士', category: '主讲教师', course: '前沿技术与学科发展讲座、人工智能概论', role: '项目负责人：总体教学设计与实验系统建设，大模型与智能体应用、数据安全与模型安全模块，组织校内教学应用' },
+  { order: 2, name: '张雪亚', title: '副教授', degree: '硕士', category: '主讲教师', course: '实验室安全', role: '机房安全规程教学改编与审核：准入与区域授权、只读巡检、分情景应急（过温/火警/漏液）、安全事件报告规范' },
+  { order: 3, name: '李亚峰', title: '教授', degree: '博士', category: '主讲教师', course: '数学建模', role: 'GPU 热路微分方程模型、检测阈值与 F1 权衡、公平性指标与评分模型设计' },
+  { order: 4, name: '樊攀', title: '副教授', degree: '博士', category: '主讲教师', course: '数字图像处理', role: '图像去标识化实验模块（空间域滤波、马赛克、可识别性评价），三维场景视觉效果指导' },
+  {
+    order: 5, name: '陈冬', title: '副教授', degree: '博士', category: '产业技术专家',
+    org: '宝鸡市高新区科技和工信商务局（数据局）', position: '副局长（兼职）',
+    role: '【产业技术专家】结合高新区数据管理与企业数字化转型工作，提出企业数据安全、个人信息保护与算力设施运行的产业需求和监管要求；参与真实产业场景与典型事件案例（脱敏后）的教学转化、数据分类分级与密钥、日志审计等任务设计，推动产业对接与项目推广'
+  }
 ];
 
 export const PROJECT_INFO = {

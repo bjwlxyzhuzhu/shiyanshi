@@ -181,6 +181,104 @@ export function PrelabView() {
   );
 }
 
+/** 研究探索（选做）：提出假设 → 自主设计多组参数 → 依据仿真数据写结论 → 获得趋势反馈 */
+export function ExploreView() {
+  const session = useSessionStore((state) => state.session);
+  const [data, setData] = useState<Awaited<ReturnType<typeof api.explore>> | null>(null);
+  const [active, setActive] = useState<string>('E1');
+  const [params, setParams] = useState<Record<string, number>>({});
+  const [hypothesis, setHypothesis] = useState('');
+  const [conclusion, setConclusion] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => api.explore().then(setData).catch(() => setError('研究探索暂不可用'));
+  useEffect(() => { void load(); }, []);
+  const exp = data?.explorations.find((item) => item.id === active);
+  const progress = data?.progress.find((item) => item.id === active);
+  useEffect(() => {
+    if (!exp) return;
+    setParams(Object.fromEntries(exp.variables.map((variable) => [variable.key, variable.default])));
+    setHypothesis(progress?.report?.hypothesis ?? '');
+    setConclusion(progress?.report?.conclusion ?? '');
+    setFeedback(progress?.report?.feedback ?? null);
+  }, [active, data?.explorations]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!data || !exp) return <p className="muted small">{error ?? '读取中…'}</p>;
+  const run = async () => {
+    setError(null);
+    try {
+      await api.runExplore(exp.id, params, session?.sessionId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '运行失败');
+    }
+  };
+  const conclude = async () => {
+    setError(null);
+    try {
+      const result = await api.concludeExplore(exp.id, hypothesis, conclusion, session?.sessionId);
+      setFeedback(result.feedback);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '提交失败');
+    }
+  };
+  const trials = progress?.trials ?? [];
+  return (
+    <div className="explore" data-block-keys>
+      <div className="explore-tabs" role="tablist">
+        {data.explorations.map((item) => (
+          <button key={item.id} type="button" role="tab" aria-selected={item.id === active} className={item.id === active ? 'on' : ''} onClick={() => setActive(item.id)}>{item.title}</button>
+        ))}
+      </div>
+      <p className="small"><b>研究问题：</b>{exp.question}</p>
+      <div className="field">
+        <label htmlFor="ex-hyp">我的假设</label>
+        <textarea id="ex-hyp" rows={2} value={hypothesis} placeholder="先写下你预期的规律，再用数据检验" onChange={(e) => setHypothesis(e.target.value)} />
+      </div>
+      <div className="explore-vars">
+        {exp.variables.map((variable) => (
+          <label key={variable.key} className="field">
+            <span className="field-label">{variable.label}{variable.unit ? `（${variable.unit}）` : ''}</span>
+            <input type="number" min={variable.min} max={variable.max} step={variable.step} value={params[variable.key] ?? variable.default} onChange={(e) => setParams((current) => ({ ...current, [variable.key]: Number(e.target.value) }))} />
+          </label>
+        ))}
+        <button type="button" className="ghost small" onClick={() => void run()}>运行一组试验</button>
+      </div>
+      {trials.length ? (
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>#</th>{exp.variables.map((v) => <th key={v.key}>{v.label}</th>)}{exp.metrics.map((m) => <th key={m.key}>{m.label}</th>)}</tr></thead>
+            <tbody>
+              {trials.map((trial, index) => (
+                <tr key={index}><td>{index + 1}</td>{exp.variables.map((v) => <td key={v.key}>{trial.params[v.key]}</td>)}{exp.metrics.map((m) => <td key={m.key}>{trial.metrics[m.key]}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="muted small">尚未运行试验。至少运行 {data.minTrials} 组不同参数后才能提交结论。</p>}
+      <div className="field">
+        <label htmlFor="ex-con">依据数据的结论</label>
+        <textarea id="ex-con" rows={3} value={conclusion} placeholder="引用你的试验数据说明规律，并回答研究问题" onChange={(e) => setConclusion(e.target.value)} />
+      </div>
+      <button type="button" className="primary small" onClick={() => void conclude()}>提交结论，获取数据反馈</button>
+      {error ? <p className="error-text">{error}</p> : null}
+      {feedback ? <pre className="explore-feedback">{feedback}</pre> : null}
+      <p className="muted small">研究探索不计入 100 分，试验与结论写入实验报告与过程评价。</p>
+    </div>
+  );
+}
+
+/** 实验数据体系：产业实践数据、学科知识数据、典型实验案例数据（建设标准 1） */
+export function DataSystemView() {
+  return (
+    <dl className="kv">
+      <div><dt>产业实践数据</dt><dd>数据中心与设备厂商公开规程（Equinix、华为、NVIDIA、Dell、阿里云、NIST 等 15 项）转化的规则与设备档案；校企课题中企业 MES 质检与人事数据的字段结构；产业技术专家提供的数据安全与个人信息保护监管要求。</dd></div>
+      <div><dt>学科知识数据</dt><dd>{KNOWLEDGE_POINTS.length} 个知识点（{COURSES.length} 门课程），每个知识点给出原理与规范依据，关联到具体步骤。</dd></div>
+      <div><dt>典型实验案例数据</dt><dd>24 步实验情景与仿真数据集：2000 条产线记录（按企业数据结构程序合成，不含真实个人信息）、200 条投毒检测样本、24 小时 API 调用序列、审计日志、GPU 热路模型参数。</dd></div>
+    </dl>
+  );
+}
+
 export function ProcessView() {
   const session = useSessionStore((state) => state.session);
   const [data, setData] = useState<ProcessSummary | null>(null);
@@ -263,12 +361,14 @@ export function ProjectInfo() {
         <div><dt>实验类型</dt><dd>{PROJECT_INFO.experimentType}（融合 {COURSES.length} 门课程，{KNOWLEDGE_POINTS.length} 个知识点）</dd></div>
         <div><dt>面向学生</dt><dd>{PROJECT_INFO.students.grade} · {PROJECT_INFO.students.majors.map((major) => major.replace(/^\S+\s/, '')).join('、')}</dd></div>
       </dl>
+      <h3>实验数据体系</h3>
+      <DataSystemView />
       <h3>项目团队</h3>
       <ul className="team-list">
         {TEAM.map((member) => (
           <li key={member.name}>
             <b>{member.name}</b>
-            <span>{member.title}{member.degree ? ` · ${member.degree}` : ''} · 主讲《{member.course}》</span>
+            <span>{member.category === '产业技术专家' ? `产业技术专家 · ${member.org} ${member.position}` : `${member.title}${member.degree ? ` · ${member.degree}` : ''} · 主讲《${member.course?.split('、').join('》《')}》`}</span>
           </li>
         ))}
       </ul>

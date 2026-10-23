@@ -5,7 +5,7 @@ import { interactWith } from '../world/actions';
 import { HOTSPOT_BY_ID, STAGE_SHORT, STEP_OBJECTIVE, STEP_OPERATION_HINT, ZONE_BY_ID, hotspotForStep } from '../world/layout';
 import type { SceneState } from '../world/sceneAdapter';
 import { perf, useWorldStore, type Quality } from '../world/worldStore';
-import { ArchiveView, CourseView, LadderView, NetworkCheck, PrelabView, ProjectInfo } from './Learning';
+import { ArchiveView, CourseView, ExploreView, LadderView, NetworkCheck, PrelabView, ProjectInfo } from './Learning';
 
 export function TopBar({ scene }: { scene: SceneState }) {
   const session = useSessionStore((state) => state.session);
@@ -214,6 +214,10 @@ export function RecordsDrawer({ onReview }: { onReview: (stepId: string) => void
       <section className="records-stage">
         <h3>预习测验 <span className="source-chip muted">预习成绩</span></h3>
         <PrelabView />
+      </section>
+      <section className="records-stage">
+        <h3>研究探索 <span className="source-chip muted">选做 · 不计分</span></h3>
+        <ExploreView />
       </section>
       <section className="records-stage">
         <h3>阶梯能力 <span className="source-chip muted">基础 → 综合 → 复杂问题</span></h3>
