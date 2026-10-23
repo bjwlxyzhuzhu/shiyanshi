@@ -201,7 +201,7 @@ export function ExploreView() {
     setHypothesis(progress?.report?.hypothesis ?? '');
     setConclusion(progress?.report?.conclusion ?? '');
     setFeedback(progress?.report?.feedback ?? null);
-  }, [active, data?.explorations]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [active, data !== null]); // eslint-disable-line react-hooks/exhaustive-deps -- 只在切换任务或首次加载时重置表单，运行试验后的刷新不能清空已写的假设
   if (!data || !exp) return <p className="muted small">{error ?? '读取中…'}</p>;
   const run = async () => {
     setError(null);
