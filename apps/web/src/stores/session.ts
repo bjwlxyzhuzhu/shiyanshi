@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import {
+  BANK_VERSION,
   getStep,
   joinList,
   nextStepId,
@@ -83,6 +84,12 @@ export interface AsyncState<T> {
 interface SessionStore {
   token: string | null;
   user: User | null;
+  /** 教师/管理员可切换到管理后台 */
+  page: 'experiment' | 'admin';
+  setPage: (page: 'experiment' | 'admin') => void;
+  setUser: (user: User) => void;
+  /** 旧版题库的已提交记录：只读回看，重新提交按新题库评分 */
+  legacy: Record<string, boolean>;
   session: SessionState | null;
   viewStepId: string;
   inputs: Record<string, Input>;
@@ -127,6 +134,13 @@ const idle = <T,>(): AsyncState<T> => ({ status: 'idle', data: null, error: null
 export const useSessionStore = create<SessionStore>((set, get) => ({
   token: getToken(),
   user: getStoredUser(),
+  page: 'experiment',
+  setPage: (page) => set({ page }),
+  setUser: (user) => {
+    setAuth(get().token, user);
+    set({ user });
+  },
+  legacy: {},
   session: null,
   viewStepId: 'S01',
   inputs: {},
@@ -149,7 +163,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     try {
       const data = await api.login(username, password);
       setAuth(data.token, data.user);
-      set({ token: data.token, user: data.user, loading: false, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle() });
+      set({ token: data.token, user: data.user, page: 'experiment', legacy: {}, loading: false, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle() });
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : '登录失败' });
     }
@@ -160,7 +174,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (getToken()) api.presence('leave').catch(() => undefined);
     setAuth(null, null);
     writeSessionId(null);
-    set({ token: null, user: null, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle(), error: null, submitError: null, viewStepId: 'S01' });
+    set({ token: null, user: null, page: 'experiment', legacy: {}, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle(), error: null, submitError: null, viewStepId: 'S01' });
   },
 
   start: () => {
@@ -181,9 +195,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           const inputs: Record<string, Input> = {};
           const results: Record<string, StepResult> = {};
           const submitted: Record<string, string> = {};
+          const legacy: Record<string, boolean> = {};
           for (const record of records) {
-            inputs[record.stepId] = record.input;
-            submitted[record.stepId] = inputHash(record.input);
+            if (record.bankVersion !== BANK_VERSION) {
+              // 旧题库的输入字段与新题不一致：不回填，表单按新题默认值显示
+              legacy[record.stepId] = true;
+            } else {
+              inputs[record.stepId] = record.input;
+              submitted[record.stepId] = inputHash(record.input);
+            }
             results[record.stepId] = {
               stepId: record.stepId,
               score: record.score,
@@ -194,7 +214,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
               nextStepId: null
             };
           }
-          set({ session: resumed, viewStepId: resumed.currentStepId, inputs, results, submitted, loading: false });
+          set({ session: resumed, viewStepId: resumed.currentStepId, inputs, results, submitted, legacy, loading: false });
           void get().refreshIlab();
           return;
         }
@@ -257,6 +277,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         session: updated,
         results: { ...get().results, [stepId]: result },
         submitted: { ...get().submitted, [stepId]: hash },
+        legacy: { ...get().legacy, [stepId]: false },
         submitting: null
       });
       void get().refreshIlab();
@@ -344,7 +365,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const updated = await api.reset(session.sessionId);
       // 绑定实验空间的会话不清空：服务端返回一个新会话（新的记录编号）
       if (updated.sessionId !== session.sessionId) writeSessionId(updated.sessionId);
-      set({ session: updated, results: {}, inputs: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilabSync: idle(), viewStepId: 'S01', loading: false });
+      set({ session: updated, results: {}, inputs: {}, submitted: {}, legacy: {}, previews: {}, reviews: {}, report: idle(), ilabSync: idle(), viewStepId: 'S01', loading: false });
       void get().refreshIlab();
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : '重置失败' });
@@ -381,7 +402,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const data = await api.ilabBootstrap();
       setAuth(data.token, data.user);
       writeSessionId(data.sessionId);
-      set({ token: data.token, user: data.user, loading: false, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle() });
+      set({ token: data.token, user: data.user, page: 'experiment', legacy: {}, loading: false, session: null, inputs: {}, results: {}, submitted: {}, previews: {}, reviews: {}, report: idle(), ilab: null, ilabSync: idle() });
       return true;
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : '实验空间登录失败，请重新进入' });

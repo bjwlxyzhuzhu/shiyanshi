@@ -94,6 +94,8 @@ export function ActionBar({ scene }: { scene: SceneState }) {
   const setAutoWalk = useWorldStore((state) => state.setAutoWalk);
   const setDrawer = useWorldStore((state) => state.setDrawer);
   const cycleHint = useWorldStore((state) => state.cycleHint);
+  const user = useSessionStore((state) => state.user);
+  const setPage = useSessionStore((state) => state.setPage);
   const exploring = mode === 'exploring' || mode === 'returning';
   const nearHotspot = near ? HOTSPOT_BY_ID.get(near) : null;
   const nearStatus = near ? scene.hotspots[near] : null;
@@ -114,6 +116,7 @@ export function ActionBar({ scene }: { scene: SceneState }) {
       <button type="button" className="ghost" onClick={() => setDrawer('records')}>任务记录</button>
       <button type="button" className="ghost" onClick={() => setDrawer('settings')}>设置</button>
       <button type="button" className="ghost" onClick={() => setDrawer('help')}>帮助</button>
+      {user && user.role !== 'student' ? <button type="button" className="ghost" onClick={() => setPage('admin')}>{user.role === 'admin' ? '管理后台' : '教师后台'}</button> : null}
     </div>
   );
 }

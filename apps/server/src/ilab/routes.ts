@@ -3,6 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import type { User } from '@zhian/shared';
 import { authRequired, type AuthedRequest } from '../auth.js';
 import { db, nowIso } from '../db.js';
+import { effectiveModelMeta } from '../ai/modelSettings.js';
 import { ilabConfig, productionReadiness } from './config.js';
 import { bindIdentity, clientFor, consumeHandoff, createContext, createHandoff, getContext, markTicketSeen } from './identity.js';
 import { mockIlab } from './mockClient.js';
@@ -176,7 +177,8 @@ ilabApiRouter.get('/readiness', authRequired, (req: AuthedRequest, res) => {
     return;
   }
   const config = ilabConfig();
-  res.json({ mode: config.mode, networkEnabled: config.networkEnabled, items: productionReadiness(config) });
+  // 模型元数据以管理员配置为准（其次是环境变量）
+  res.json({ mode: config.mode, networkEnabled: config.networkEnabled, items: productionReadiness({ ...config, aiModel: effectiveModelMeta() ?? config.aiModel }) });
 });
 
 /** 仅 mock 模式：生成合成 ticket 的入口地址，用于本地演示完整进入流程 */

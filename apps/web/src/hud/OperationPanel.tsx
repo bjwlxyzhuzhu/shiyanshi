@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { SCENARIO, STEPS, getStep, nextStepId, type StepDefinition, type StepResult } from '@zhian/shared';
+import { SCENARIO, STEPS, SYNTHETIC_DEVICE_PROFILE, describeProfile, getStep, nextStepId, type StepDefinition, type StepResult } from '@zhian/shared';
 import { ChartView } from '../components/ChartView';
 import { FieldInput } from '../components/FieldInput';
 import { ImagePreview } from '../components/ImagePreview';
@@ -12,7 +12,7 @@ import { IlabSyncBlock } from './IlabSync';
 import { KnowledgeBlock, LadderView, ProcessView, TutorBlock } from './Learning';
 import { Radar } from './Radar';
 
-const HIDDEN = new Set(['chart', 'preview', 'image', 'verdicts', 'trace', 'profile']);
+const HIDDEN = new Set(['chart', 'preview', 'image', 'verdicts', 'trace', 'profile', '关键错误']);
 const WIDE = new Set(['checklist', 'order', 'text']);
 
 function display(value: unknown): string {
@@ -77,13 +77,19 @@ function ResultBlock({ step, result, dirty }: { step: StepDefinition; result: St
   const ratio = result.maxScore ? result.score / result.maxScore : 0;
   const trace = (result.result.trace as TraceHop[] | undefined) ?? null;
   const entries = Object.entries(result.result).filter(([key]) => !HIDDEN.has(key));
+  const critical = result.result.关键错误 ? display(result.result.关键错误) : null;
+  const legacy = useSessionStore((state) => state.legacy[step.id] ?? false);
   return (
     <section className={`result-block${dirty ? ' stale' : ''}`} aria-live="polite">
       <header>
-        <h3>{dirty ? '上次提交结果' : '提交结果'}</h3>
+        <h3>{legacy ? '旧版题库记录' : dirty ? '上次提交结果' : '提交结果'}</h3>
         <span className="source-chip">服务端评分</span>
       </header>
-      {dirty ? <p className="stale-note">当前输入已修改，以下内容对应上一次提交，不代表新输入的判定。</p> : null}
+      {legacy ? <p className="stale-note">该记录按 2026-10-23 产业规程修正前的旧版题库评分，仅供回看；本步题目已更新，重新提交将按新题库评分。</p> : null}
+      {!legacy && dirty ? <p className="stale-note">当前输入已修改，以下内容对应上一次提交，不代表新输入的判定。</p> : null}
+      {critical ? (
+        <p className="critical-badge" role="alert"><b>关键安全错误</b>{critical}</p>
+      ) : null}
       <div className="score-line">
         <b>{result.score}</b><span>/ {result.maxScore} 分</span>
         <div className={`meter ${tone(ratio)}`}><i style={{ width: `${Math.round(ratio * 100)}%` }} /></div>
@@ -106,7 +112,7 @@ function ResultBlock({ step, result, dirty }: { step: StepDefinition; result: St
           <TraceView trace={trace} />
         </div>
       ) : null}
-      {step.id === 'S20' ? <p className="muted small">本步只核验处置顺序，没有逐时刻冷却模拟；场景中只显示“预案核验完成”状态。</p> : null}
+      {step.id === 'S20' ? <p className="muted small">本步只核验分情景处置决定，没有逐时刻冷却模拟；场景中只显示“预案核验完成”状态。</p> : null}
     </section>
   );
 }
@@ -147,7 +153,7 @@ function PreviewBlock({ step }: { step: StepDefinition }) {
         <ChartView
           chart={preview.chart}
           xLabel={step.id === 'S19' ? '模拟时间 / s' : undefined}
-          note={step.id === 'S19' ? '教学热路模型计算的仿真曲线，非本机或真实设备测量；红色虚线为 83 °C 参考上限。' : '后端仿真预览，不含评分。'}
+          note={step.id === 'S19' ? '教学热路模型计算的仿真曲线，非本机或真实设备测量；参考线为合成教学档案中的告警/降频/关断阈值，只适用于 GPU 核心温度测点。' : '后端仿真预览，不含评分。'}
         />
       ) : null}
       {!preview?.chart && !preview?.preview && preview?.status === 'ok' ? <p className="muted small">后端没有返回可显示的预览。</p> : null}
@@ -315,9 +321,16 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
             <p>{step.material}</p>
           </details>
         ) : null}
+        {step.id === 'S04' || step.id === 'S19' ? (
+          <details className="material profile-banner" open>
+            <summary>设备档案 <span className="source-chip warn">合成教学档案 · 非真实厂商参数</span></summary>
+            <p>{describeProfile(SYNTHETIC_DEVICE_PROFILE)}</p>
+            <p className="muted small">真实机房须使用经运维与厂商资料确认、批准后的档案；未确认的参数记为未知，不补 0、不推定安全。</p>
+          </details>
+        ) : null}
         <KnowledgeBlock step={step} />
         {step.id === 'S09' ? <p className="note">本步骤为“实验结束后清理”的预演：只记录你的选择，不会删除任何真实文件。</p> : null}
-        {step.id === 'S20' ? <p className="note warn">演练告警示意：机房空调故障导致 GPU 过温。请排列处置顺序；本步不模拟处置后的温度变化。</p> : null}
+        {step.id === 'S20' ? <p className="note warn">演练示意：无烟过温、火警、漏液三个情景分别处置，人身安全优先。本步只核验你的决定，不模拟处置后的温度变化，也不会触发任何真实报警或设备操作。</p> : null}
         {!canSubmit ? <p className="note">这是已提交步骤的只读回看。重新提交历史步骤会使服务端进度回退，因此这里不提供提交。</p> : null}
 
         {step.fields.length ? (

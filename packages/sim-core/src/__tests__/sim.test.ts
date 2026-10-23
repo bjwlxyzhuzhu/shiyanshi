@@ -106,8 +106,8 @@ describe('thermal', () => {
   it('more fan keeps the GPU under the limit at high load', () => {
     const weak = simulateGpuThermal(90, 30, 26);
     const strong = simulateGpuThermal(90, 80, 26);
-    expect(weak.peakC).toBeGreaterThan(83);
-    expect(strong.peakC).toBeLessThan(83);
+    expect(weak.peakC).toBeGreaterThan(80);
+    expect(strong.peakC).toBeLessThan(80);
     expect(strong.tempC.length).toBe(weak.tempC.length);
   });
 });

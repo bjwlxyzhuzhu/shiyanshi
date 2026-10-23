@@ -191,4 +191,33 @@ export function migrate(db: DatabaseSync): void {
     `);
     db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(2, new Date().toISOString());
   }
+
+  if (!applied.has(3)) {
+    // 管理员配置（大模型等，密钥加密保存）、导入的师生信息、题库版本
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_by INTEGER,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS admin_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT,
+        detail_json TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+    addColumn(db, 'users', 'class_name', 'TEXT');
+    addColumn(db, 'users', 'major', 'TEXT');
+    addColumn(db, 'users', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn(db, 'users', 'last_login_at', 'TEXT');
+    // 旧记录为 NULL，即 2026-10-23 产业规程修正之前的题库
+    addColumn(db, 'step_records', 'bank_version', 'TEXT');
+    addColumn(db, 'step_attempts', 'bank_version', 'TEXT');
+    db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(3, new Date().toISOString());
+  }
 }

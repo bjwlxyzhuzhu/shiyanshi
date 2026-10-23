@@ -10,10 +10,10 @@ export interface Course {
 
 export const COURSES: Course[] = [
   { id: 'AI', name: '人工智能概论', teacher: '朱丽叶' },
-  { id: 'DIP', name: '数字图像处理', teacher: '樊攀' },
-  { id: 'NET', name: '计算机网络', teacher: '陈冬' },
   { id: 'MATH', name: '数学建模', teacher: '李亚峰' },
-  { id: 'SAFE', name: '实验室安全', teacher: '张雪亚' }
+  { id: 'SAFE', name: '实验室安全', teacher: '张雪亚' },
+  { id: 'DIP', name: '数字图像处理', teacher: '樊攀' },
+  { id: 'NET', name: '计算机网络', teacher: '陈冬' }
 ];
 
 export interface KnowledgePoint {
@@ -28,11 +28,11 @@ export interface KnowledgePoint {
 }
 
 export const KNOWLEDGE_POINTS: KnowledgePoint[] = [
-  { id: 'K01', name: '实验室准入与安全培训制度', course: 'SAFE', steps: ['S01'], principle: '进入实验室开展有风险的实验前，应完成安全培训考核并取得授权，准入材料用于证明“人员合格、任务明确、责任落实、数据使用有约束”。与实验风险无关的材料不应作为准入条件。', reference: '《高等学校实验室安全规范》（教育部，2023）' },
+  { id: 'K01', name: '实验室准入与区域授权', course: 'SAFE', steps: ['S01'], principle: '进入实验室开展有风险的实验前，应完成安全培训考核并取得授权；机房还要核对本人身份、访问时段与授权区域，准入凭证不能由他人代办。与实验风险无关的材料不应作为准入条件。', reference: '《高等学校实验室安全规范》（教育部，2023）；Equinix Global IBX Policies（2026）' },
   { id: 'K02', name: '风险辨识与分级管控', course: 'SAFE', steps: ['S02'], principle: '风险等级由危害对象的敏感程度、系统能力规模和可能的影响途径综合决定；当存在敏感数据且系统具备向外部发送数据的能力时，风险会显著放大，应提高管控等级。', reference: '《高等学校实验室安全规范》（教育部，2023）' },
-  { id: 'K03', name: '应急预案体系', course: 'SAFE', steps: ['S03', 'S10', 'S20'], principle: '应急预案应覆盖本实验可能发生的主要事故类型，并明确报告路径、联系人和处置流程。安排处置顺序时可以自问：哪一步能最快阻止损害扩大？哪一步需要依赖前一步得到的信息？' },
-  { id: 'K04', name: '机房电气与消防安全', course: 'SAFE', steps: ['S04', 'S18', 'S20'], principle: '服务器机房应关注接地、不间断电源、通风散热和适用于电气火灾的灭火器材，选择灭火器时要考虑灭火剂是否导电。上电与断电的顺序可以从“供电链路上谁依赖谁”来推理。' },
-  { id: 'K05', name: '机房环境温湿度控制', course: 'SAFE', steps: ['S04', 'S19'], principle: '机房进风温度应保持在设备推荐范围内，温度过高会使散热裕量下降、器件降频甚至损坏；巡检时应记录环境温度并与推荐区间比对。' },
+  { id: 'K03', name: '分情景应急预案', course: 'SAFE', steps: ['S03', 'S10', 'S20'], principle: '不同事故的处置逻辑不同：火情与人身风险以报警、撤离和清点为先；漏液以远离液体与电气暴露区域并通知值班为先；无危险的过温以尽早报告、减载和受控处置为主。安排顺序时自问：哪一步最快保护人身安全？哪一步依赖前一步的信息？', reference: 'Equinix IBX Health and Safety Guide；华为 FusionModule2000 安装指南（2026）；Dell iDRAC10 漏液检测' },
+  { id: 'K04', name: '机房电气安全与角色边界', course: 'SAFE', steps: ['S04', 'S18', 'S20'], principle: '配电送电、PDU 断路器、UPS 与制冷维修属于设施作业，只能由有资质的授权人员按设备程序执行；学生巡检以只读查看和报告为主。待机不等于断电，维修前须确认所有供电输入均已隔离。', reference: '华为 FusionModule2000 安装指南（2026）；NVIDIA DGX H100/H200 User Guide — Safety' },
+  { id: 'K05', name: '设备档案与温度测点', course: 'SAFE', steps: ['S04', 'S19'], principle: '温度判断要绑定设备型号、固件和测点：机柜进风、GPU 芯片核心、显存以及 T.Limit 等测点含义各不相同，告警、降频、关断也是不同阈值。设备未提供的读数应记为未知并报告，不能补零或套用其他测点的阈值。', reference: 'NVIDIA nvidia-smi 文档；NVIDIA DGX SuperPOD H100 数据中心规划指南' },
   { id: 'K06', name: '安全事件分级与报告', course: 'SAFE', steps: ['S22'], principle: '安全事件报告应包含时间、影响范围、原因分析、处置措施与整改计划等要素，事件等级依据影响对象和影响程度判定。' },
   { id: 'K07', name: '事故复盘与整改闭环', course: 'SAFE', steps: ['S23'], principle: '整改措施应针对根本原因，在技术、管理和人员三个层面形成闭环；评价每条措施时，想一想它是否会同时带来新的风险或削弱追溯能力。' },
   { id: 'K08', name: '数据分类分级与个人信息', course: 'AI', steps: ['S05'], principle: '个人信息是能识别特定自然人的信息；其中一旦泄露易导致人格尊严或人身财产受损的为敏感个人信息，如身份证件号码、健康信息等。分级结果决定后续的处理与保护要求。', reference: '《中华人民共和国个人信息保护法》；GB/T 35273-2020' },
@@ -40,7 +40,7 @@ export const KNOWLEDGE_POINTS: KnowledgePoint[] = [
   { id: 'K10', name: '大模型许可与合规使用', course: 'AI', steps: ['S11'], principle: '开源模型的许可证规定了可用范围（如是否允许商用、是否需署名）；使用前应核对许可条款与本次用途是否一致。', reference: '《生成式人工智能服务管理暂行办法》（2023）' },
   { id: 'K11', name: '提示注入攻击原理', course: 'AI', steps: ['S14'], principle: '提示注入是攻击者在输入或外部内容中夹带指令，试图改变模型原有行为，常见形式有“忽略之前指令”、角色越狱、在网页或文件中隐藏指令、诱导泄露机密。判断时关注输入是否试图改变系统规则，而不是话题是否敏感。' },
   { id: 'K12', name: '越狱与内容安全策略', course: 'AI', steps: ['S15'], principle: '内容安全处置应先判断请求意图与潜在后果：是正常的学习需求、可能造成危害或侵权的请求，还是提问者本人可能处于危险之中？不同情况需要不同的处置策略。' },
-  { id: 'K13', name: '智能体工具调用与最小权限', course: 'AI', steps: ['S16'], principle: '智能体可调用的工具越多、权限越高，被注入后造成的危害越大。最小权限原则要求：逐个思考每个工具在被恶意指令驱动时最坏能造成什么后果，再决定授予何种权限。' },
+  { id: 'K13', name: '智能体工具调用与最小权限', course: 'AI', steps: ['S16'], principle: '智能体可调用的工具越多、权限越高，被注入后造成的危害越大。最小权限原则要求逐个思考每个工具在被恶意指令驱动时最坏能造成什么后果；管理面与任务面应隔离，涉及人身与设施安全的控制不应交给自动化的智能体。', reference: '阿里云 ECS 责任共担模型；华为云信任中心' },
   { id: 'K14', name: '算法公平性与偏见', course: 'AI', steps: ['S17'], principle: '模型在不同群体上的表现差异可能造成不公平结果；应选择与业务目标匹配的公平性指标，设定可接受阈值，超出时需要整改后才能使用。', reference: '《科技伦理审查办法（试行）》（2023）' },
   { id: 'K15', name: '数据来源与授权核查', course: 'AI', steps: ['S07'], principle: '用于模型训练的数据应有合法来源，并逐项核对知情同意的范围、审批情况与保存期限是否覆盖实际用途。', reference: '《中华人民共和国个人信息保护法》' },
   { id: 'K16', name: '图像空间域滤波', course: 'DIP', steps: ['S06'], principle: '均值、高斯等低通滤波对邻域像素加权平均，抑制高频细节（边缘、纹理）而保留低频结构；高斯核的标准差越大，平滑范围越大。' },
@@ -51,7 +51,7 @@ export const KNOWLEDGE_POINTS: KnowledgePoint[] = [
   { id: 'K21', name: '调用量监测与异常检测', course: 'NET', steps: ['S13'], principle: '通过按时间统计的调用量可以发现异常时段，告警阈值过低会产生大量误报，过高则会漏掉泄露。' },
   { id: 'K22', name: '数据外发通道', course: 'NET', steps: ['S16'], principle: '数据可经邮件、HTTP 请求参数或命令行上传等多种通道外发；阻断外泄需要逐一控制所有具备外发能力的通道。' },
   { id: 'K23', name: '日志审计与溯源', course: 'NET', steps: ['S21'], principle: '审计日志按时间与账号检索，可还原异常行为发生的时间窗和责任主体；时间窗与账号都需要与异常事件对应。' },
-  { id: 'K24', name: '数据删除与残留', course: 'NET', steps: ['S09'], principle: '数据在一次实验中可能在多个环节留下副本。清理前先梳理数据流经的每个存储位置，再比较不同删除方式能否被恢复。' },
+  { id: 'K24', name: '数据删除与介质清除', course: 'NET', steps: ['S09'], principle: '数据在一次实验中可能在多个环节留下副本。不同存储介质的清除原理不同：固态盘存在磨损均衡与预留空间，磁介质与云端副本又各有特点；清除后需要验证并留下记录，资产转移还要登记去向。', reference: 'NIST SP 800-88 Rev.2（2025）；阿里云 ECS 责任共担模型' },
   { id: 'K25', name: '一阶热路微分方程模型', course: 'MATH', steps: ['S19'], principle: '芯片温度可用一阶热路描述：C·dT/dt = P − (T − T_in)/R，功耗 P 随负载上升，热阻 R 随风扇转速增大而减小，稳态温度为 T_in + P·R。' },
   { id: 'K26', name: '检测阈值与精确率、召回率、F1', course: 'MATH', steps: ['S08', 'S13'], principle: '阈值越严，召回率越低、精确率越高；F1 是两者的调和平均，用于在漏检与误报之间寻找平衡点。' },
   { id: 'K27', name: '统计公平性指标', course: 'MATH', steps: ['S17'], principle: '人口统计均等差衡量不同群体获得正向结果的比例差，机会均等差衡量真实为正的样本在不同群体中被正确识别的比例差。' },

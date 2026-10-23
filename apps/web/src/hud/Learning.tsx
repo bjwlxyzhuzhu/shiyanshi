@@ -184,6 +184,7 @@ export function ProjectInfo() {
         <div><dt>项目名称</dt><dd>{PROJECT_INFO.name}</dd></div>
         <div><dt>申报方向</dt><dd>{PROJECT_INFO.direction}</dd></div>
         <div><dt>实验类型</dt><dd>{PROJECT_INFO.experimentType}（融合 {COURSES.length} 门课程，{KNOWLEDGE_POINTS.length} 个知识点）</dd></div>
+        <div><dt>面向学生</dt><dd>{PROJECT_INFO.students.grade} · {PROJECT_INFO.students.majors.map((major) => major.replace(/^\S+\s/, '')).join('、')}</dd></div>
       </dl>
       <h3>项目团队</h3>
       <ul className="team-list">

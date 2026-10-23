@@ -38,6 +38,7 @@ function HtmlExperiment() {
   const view = useSessionStore((state) => state.view);
   const user = useSessionStore((state) => state.user);
   const logout = useSessionStore((state) => state.logout);
+  const setPage = useSessionStore((state) => state.setPage);
   const webglIssue = useWorldStore((state) => state.webglIssue);
   const setHtmlMode = useWorldStore((state) => state.setHtmlMode);
   const setDrawer = useWorldStore((state) => state.setDrawer);
@@ -52,6 +53,7 @@ function HtmlExperiment() {
           <span className="muted">{user?.username} · {(session?.totalScore ?? 0).toFixed(1)} / 100</span>
           {!webglIssue ? <button type="button" className="ghost" onClick={() => setHtmlMode(false)}>返回三维场景</button> : null}
           <button type="button" className="ghost" onClick={() => setDrawer('records')}>任务记录</button>
+          {user && user.role !== 'student' ? <button type="button" className="ghost" onClick={() => setPage('admin')}>{user.role === 'admin' ? '管理后台' : '教师后台'}</button> : null}
           <button type="button" className="ghost" onClick={logout}>退出</button>
         </div>
       </header>

@@ -87,7 +87,7 @@ export const HOTSPOTS: Hotspot[] = [
   { id: 'sandbox-terminal', zone: 'ai', name: '提示注入隔离沙箱', code: 'M2', kind: 'sandbox', position: [30, 20], standPoint: [30, 18.3], size: [1.6, 0.8] },
   { id: 'agent-terminal', zone: 'ai', name: '智能体权限控制台', code: 'M3', kind: 'agentConsole', position: [33.5, 20], standPoint: [33.5, 18.3], size: [1.8, 0.8] },
   { id: 'gpu-inspection', zone: 'gpu', name: '机房巡检台', code: 'G1', kind: 'inspection', position: [8, 4], standPoint: [8, 5.7], size: [1.5, 0.65] },
-  { id: 'power-terminal', zone: 'gpu', name: '配电与上电控制台', code: 'G2', kind: 'powerDesk', position: [3, 4], standPoint: [3, 5.7], size: [1.4, 0.65] },
+  { id: 'power-terminal', zone: 'gpu', name: '运维值守台', code: 'G2', kind: 'powerDesk', position: [3, 4], standPoint: [3, 5.7], size: [1.4, 0.65] },
   { id: 'cooling-terminal', zone: 'gpu', name: '散热监控台', code: 'G3', kind: 'coolingDesk', position: [14, 4], standPoint: [14, 5.7], size: [1.5, 0.65] },
   { id: 'audit-terminal', zone: 'review', name: '日志审计终端', code: 'R1', kind: 'auditDesk', position: [23, 4], standPoint: [23, 5.7], size: [1.5, 0.65] },
   { id: 'review-terminal', zone: 'review', name: '复盘与报告终端', code: 'R2', kind: 'reviewDesk', position: [30, 4], standPoint: [30, 5.7], size: [1.6, 0.7] }

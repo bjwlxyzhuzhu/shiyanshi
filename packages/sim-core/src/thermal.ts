@@ -1,7 +1,5 @@
 import { round } from './metrics.js';
 
-export const GPU_LIMIT_C = 83;
-
 export interface GpuThermalResult {
   timeS: number[];
   tempC: number[];

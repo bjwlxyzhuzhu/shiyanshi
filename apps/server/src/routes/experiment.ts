@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getStep, nextStepId, STEPS, type SessionState, type StepInput } from '@zhian/shared';
+import { BANK_VERSION, getStep, nextStepId, STEPS, type SessionState, type StepInput } from '@zhian/shared';
 import { buildProfile, evaluateStep } from '@zhian/scoring';
 import { authRequired, type AuthedRequest } from '../auth.js';
 import { db, nowIso } from '../db.js';
@@ -119,9 +119,10 @@ experimentRouter.get('/:id/records', authRequired, (req: AuthedRequest, res) => 
     return;
   }
   const rows = db
-    .prepare('SELECT step_id, input_json, output_json, score, max_score FROM step_records WHERE session_id = ? ORDER BY id')
-    .all(sessionId) as unknown as Array<{ step_id: string; input_json: string; output_json: string; score: number; max_score: number }>;
+    .prepare('SELECT step_id, input_json, output_json, score, max_score, bank_version FROM step_records WHERE session_id = ? ORDER BY id')
+    .all(sessionId) as unknown as Array<{ step_id: string; input_json: string; output_json: string; score: number; max_score: number; bank_version: string | null }>;
   res.json({
+    bankVersion: BANK_VERSION,
     records: rows.map((row) => {
       const output = JSON.parse(row.output_json) as { result?: Record<string, unknown>; feedback?: string };
       return {
@@ -130,7 +131,9 @@ experimentRouter.get('/:id/records', authRequired, (req: AuthedRequest, res) => 
         score: Number(row.score),
         maxScore: Number(row.max_score),
         result: output.result ?? {},
-        feedback: output.feedback ?? ''
+        feedback: output.feedback ?? '',
+        // NULL 为 2026-10-23 产业规程修正前的旧题库记录：只读展示，重新提交按新题库评分
+        bankVersion: row.bank_version ?? 'v1'
       };
     })
   });
@@ -207,8 +210,8 @@ experimentRouter.post('/:id/step/:stepId', authRequired, (req: AuthedRequest, re
 
   db.prepare('DELETE FROM step_records WHERE session_id = ? AND step_id = ?').run(sessionId, stepId);
   db.prepare(`
-    INSERT INTO step_records (session_id, step_id, input_json, output_json, score, max_score, duration_ms, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO step_records (session_id, step_id, input_json, output_json, score, max_score, duration_ms, created_at, bank_version)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     sessionId,
     stepId,
@@ -217,7 +220,8 @@ experimentRouter.post('/:id/step/:stepId', authRequired, (req: AuthedRequest, re
     score,
     step.maxScore,
     Date.now() - startedAt,
-    nowIso()
+    nowIso(),
+    BANK_VERSION
   );
 
   const totalScore = Number(records(sessionId).reduce((sum, record) => sum + record.score, 0).toFixed(1));

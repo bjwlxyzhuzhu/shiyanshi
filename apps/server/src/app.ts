@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { ilabApiRouter, launchRouter } from './ilab/routes.js';
 import { redactUrl } from './ilab/signature.js';
+import { adminRouter } from './routes/admin.js';
 import { aiRouter } from './routes/ai.js';
 import { authRouter } from './routes/auth.js';
 import { experimentRouter } from './routes/experiment.js';
@@ -31,6 +32,7 @@ export function createApp(): express.Express {
   app.use('/api/ai', authRequired, requireSeat);
   app.use('/api/ai', aiRouter);
   app.use('/api/learning', learningRouter);
+  app.use('/api/admin', adminRouter);
 
   app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     // 错误日志只记录脱敏后的路径，不输出 ticket/token

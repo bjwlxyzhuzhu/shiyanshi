@@ -9,7 +9,8 @@ export function ChartView({ chart, xLabel, note }: { chart: ChartData; xLabel?: 
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
   const all = chart.series.flatMap((series) => series.values);
-  if (chart.threshold) all.push(chart.threshold.value);
+  const lines = chart.thresholds?.length ? chart.thresholds : chart.threshold ? [chart.threshold] : [];
+  for (const line of lines) all.push(line.value);
   const maxY = Math.max(...all, 0) * 1.1 || 1;
   const minY = Math.min(0, ...all);
   const sy = (value: number) => pad.top + plotH - ((value - minY) / (maxY - minY || 1)) * plotH;
@@ -74,22 +75,15 @@ export function ChartView({ chart, xLabel, note }: { chart: ChartData; xLabel?: 
             );
           })}
 
-        {chart.threshold ? (
-          <g>
-            <line
-              x1={pad.left}
-              x2={width - pad.right}
-              y1={sy(chart.threshold.value)}
-              y2={sy(chart.threshold.value)}
-              stroke="#F17872"
-              strokeDasharray="5 4"
-              strokeWidth={1.5}
-            />
-            <text x={width - pad.right} y={sy(chart.threshold.value) - 5} textAnchor="end" fontSize="12" fill="#F17872">
-              {chart.threshold.label} {chart.threshold.value}
-            </text>
-          </g>
-        ) : null}
+        {lines.map((line, index) => {
+          const color = ['#F4B740', '#F17872', '#ff4a6b'][index] ?? '#F17872';
+          return (
+            <g key={line.label}>
+              <line x1={pad.left} x2={width - pad.right} y1={sy(line.value)} y2={sy(line.value)} stroke={color} strokeDasharray="5 4" strokeWidth={1.5} />
+              <text x={width - pad.right} y={sy(line.value) - 4} textAnchor="end" fontSize="12" fill={color}>{line.label}</text>
+            </g>
+          );
+        })}
         {chart.unit ? <text x={6} y={pad.top + 4} fontSize="11" fill="#A7BAC9">{chart.unit}</text> : null}
         {xLabel ? <text x={pad.left + plotW / 2} y={height - 6} textAnchor="middle" fontSize="12" fill="#A7BAC9">{xLabel}</text> : null}
       </svg>

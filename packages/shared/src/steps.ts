@@ -1,5 +1,8 @@
 import type { StepDefinition } from './types.js';
 
+/** 题库版本：评分规则或选项有实质变化时更新。旧版本记录只读展示，不与新版本混合比较。 */
+export const BANK_VERSION = 'v2-industry-20261023';
+
 export const PII_LEVELS = ['一般数据', '个人信息', '敏感个人信息'];
 export const DATA_COLUMNS = ['学号', '姓名', '手机号', '身份证号', '专业', '满意度评分', '健康状况自述'];
 
@@ -23,19 +26,19 @@ export const CONTENT_CASES = [
 
 export const CONTENT_POLICIES = ['正常回答', '安全改写后回答', '拒绝并说明', '转人工并提供求助渠道'];
 
-export const AGENT_TOOLS = ['文件读取', '文件删除', '发送邮件', '执行系统命令', '联网检索'];
+export const AGENT_TOOLS = ['文件读取', '文件删除', '发送邮件', '执行系统命令', '联网检索', '机房电源与制冷控制'];
 export const TOOL_LEVELS = ['禁止', '只读', '需人工确认', '自动允许'];
 
 export const STEPS: StepDefinition[] = [
   {
     id: 'S01', seq: 1, stage: '准入', name: '实验室准入与身份核验', type: 'form', maxScore: 4,
     description: '核验实验人员身份与授权，提交准入材料。',
-    material: '按学校实验室安全管理规定，涉及个人信息数据与大模型训练的实验，须同时提交安全培训合格证明、实验任务书、指导教师签字和数据使用承诺书。',
+    material: '按学校实验室安全管理规定，涉及个人信息数据与大模型训练的实验，须同时提交安全培训合格证明、实验任务书、指导教师签字和数据使用承诺书；进入 GPU 机房还需取得对应区域与时段的准入授权，不得代刷或越区。',
     fields: [
       { key: 'role', label: '实验角色', kind: 'select', options: ['学生', '助教', '教师'], default: '学生' },
       {
         key: 'materials', label: '准入材料（勾选需提交的）', kind: 'checklist',
-        options: ['安全培训合格证明', '个人简历', '实验任务书', '指导教师签字', '成绩单', '数据使用承诺书'],
+        options: ['安全培训合格证明', '个人简历', '实验任务书', '指导教师签字', '成绩单', '数据使用承诺书', '机房区域与时段准入授权', '同学代刷门禁记录'],
         default: ''
       }
     ]
@@ -57,21 +60,23 @@ export const STEPS: StepDefinition[] = [
     fields: [
       {
         key: 'plans', label: '应急预案', kind: 'checklist',
-        options: ['数据泄露应急预案', '实验室钥匙交接表', '服务器过温与断电预案', '有害内容输出处置预案', '设备采购清单', '智能体越权处置预案', '应急联系人与上报路径'],
+        options: ['数据泄露应急预案', '实验室钥匙交接表', '服务器过温与供电异常处置预案', '火灾报警与疏散预案（含集合点）', '液冷漏液处置预案', '有害内容输出处置预案', '设备采购清单', '智能体越权处置预案', '应急联系人与上报路径'],
         default: ''
       }
     ]
   },
   {
     id: 'S04', seq: 4, stage: '准入', name: '机房设备与环境检查', type: 'scene', scene: 'labRoom', maxScore: 4,
-    description: '进入 GPU 机房，完成上机前的设备与环境检查。',
+    description: '进入 GPU 机房，以学生身份完成上机前的只读巡检，并按设备档案判断进风温度。',
+    material: '学生巡检只看不动：发现异常停下并报告值班运维，不打开配电柜、不拆机箱。机房消防的学生目标是识别火情、报警与疏散，不自行灭火。当前机柜进风测点读数为 29.5 °C；设备档案见“设备档案”说明（合成教学档案，非真实厂商参数）。',
     fields: [
       {
-        key: 'checks', label: '检查项（勾选应当确认的）', kind: 'checklist',
-        options: ['配电柜接地良好', 'UPS 状态正常', '机柜前后通风无遮挡', '配备水基灭火器', '配备气体/二氧化碳灭火器', '门禁记录正常', '把饮料放在机柜顶部以便取用'],
+        key: 'checks', label: '巡检项（勾选你应当执行的）', kind: 'checklist',
+        options: ['核对接地合格记录与标识，缺记录则报告', '只读查看 UPS/PDU 告警指示', '检查进出风无遮挡、盲板与机箱盖在位', '确认安全出口、报警点与集合点位置', '确认疏散与检修通道畅通', '打开配电柜检查接线端子', '拆下机箱盖以改善散热', '把饮料放在机柜顶部以便取用'],
         default: ''
       },
-      { key: 'ambientC', label: '机房环境温度', kind: 'number', unit: '°C', min: 10, max: 40, default: 30 }
+      { key: 'inletC', label: '记录的进风测点读数', kind: 'number', unit: '°C', min: 10, max: 40, step: 0.5, default: 22 },
+      { key: 'inletVerdict', label: '按设备档案的判断', kind: 'select', options: ['在档案允许范围内，可继续', '超出档案允许范围，报告值班运维', '档案未提供该参数，记为未知并报告'], default: '在档案允许范围内，可继续' }
     ]
   },
   {
@@ -119,14 +124,17 @@ export const STEPS: StepDefinition[] = [
   },
   {
     id: 'S09', seq: 9, stage: '数据安全', name: '训练数据残留清理', type: 'form', maxScore: 4,
-    description: '实验结束后清理所有数据残留。',
+    description: '实验结束后清理所有数据残留，并按存储介质类型选择清除方式（本步为清理预演，不会删除任何真实文件）。',
+    material: '训练机本地盘为 NVMe 固态盘；备份在对象存储中并开启了版本与快照；一块旧机械硬盘将随设备报废出场。不同介质的清除方法不同，清除后需要验证并留下记录。',
     fields: [
       {
         key: 'locations', label: '需要清理的位置', kind: 'checklist',
         options: ['训练机本地缓存', '对象存储备份', '实验日志中的样本片段', '向量数据库索引', '个人电脑下载副本', '学校官网首页'],
         default: ''
       },
-      { key: 'method', label: '清理方式', kind: 'select', options: ['删除到回收站', '安全擦除（多次覆写）', '快速格式化'], default: '删除到回收站' }
+      { key: 'ssdMethod', label: 'NVMe 固态盘的清除方式', kind: 'select', options: ['删除到回收站', '多次覆写（7 遍）', '消磁', '使用设备支持的加密擦除/安全清除并验证'], default: '删除到回收站' },
+      { key: 'cloudMethod', label: '对象存储备份的处理', kind: 'select', options: ['直接删除当前版本', '按保留策略删除，并确认历史版本与快照同步清除', '保留不处理'], default: '直接删除当前版本' },
+      { key: 'diskMethod', label: '报废机械硬盘出场', kind: 'select', options: ['快速格式化后转交', '消磁或物理销毁，登记资产去向', '直接交给回收商'], default: '快速格式化后转交' }
     ]
   },
   {
@@ -203,32 +211,47 @@ export const STEPS: StepDefinition[] = [
     ]
   },
   {
-    id: 'S18', seq: 18, stage: '设施与运维', name: 'GPU 服务器上电流程', type: 'scene', scene: 'labRoom', maxScore: 4,
-    description: '按正确顺序为 GPU 服务器上电。',
+    id: 'S18', seq: 18, stage: '设施与运维', name: 'GPU 计算任务启动前核验', type: 'scene', scene: 'labRoom', maxScore: 4,
+    description: '以学生身份完成训练任务启动前的核验与逻辑启动，并区分哪些设施操作只能由授权专业人员执行。',
+    material: '学生通过作业调度系统“逻辑启动”训练任务；配电送电、PDU 断路器与 UPS 维护属于设施作业，由有资质的专业人员按设备程序执行。BMC 告警未解释前不启动高负载。',
     fields: [
       {
-        key: 'sequence', label: '上电顺序（用 ↑ ↓ 调整）', kind: 'order',
-        options: ['开启 GPU 计算节点', '合上配电柜总开关', '检查 BMC 告警与温度', '开启机柜 PDU', '确认市电与 UPS 正常', '开启存储与网络设备'],
+        key: 'sequence', label: '启动前核验与启动顺序（用 ↑ ↓ 调整）', kind: 'order',
+        options: ['提交逻辑启动（作业调度）', '确认任务许可与使用时段', '启动后观察温度与功耗', '在 BMC 中只读查看电源、风扇、温度告警', '核对获批的功率与制冷预算', '确认进风温度在设备档案范围内'],
+        default: ''
+      },
+      {
+        key: 'facilityOnly', label: '以下哪些操作应由授权专业人员执行（学生不做）', kind: 'checklist',
+        options: ['合上配电柜总开关', '闭合机柜 PDU 断路器', 'UPS 维护与电池更换', '通过作业调度提交训练任务', '在 BMC 只读查看传感器'],
         default: ''
       }
     ]
   },
   {
     id: 'S19', seq: 19, stage: '设施与运维', name: '散热与过温监控', type: 'chart', maxScore: 4,
-    description: '在保证训练负载的前提下调整风扇转速，使 GPU 峰值温度不超过 83 °C。',
+    description: '按设备档案选择正确的温度测点，调节风扇转速与进风温度，在满足任务负载要求的同时让温度保持在告警阈值以下。',
+    material: '训练任务要求负载不低于 85%。温度阈值只适用于档案中注明的测点；档案未提供的读数应视为未知，不能套用其他测点的阈值。安全超限时，负载再高也不能弥补。',
     fields: [
+      { key: 'metric', label: '用于研判的温度测点', kind: 'select', options: ['进风温度', 'GPU 核心温度', '显存温度', 'T.Limit 余量'], default: '进风温度' },
       { key: 'loadPct', label: 'GPU 负载', kind: 'number', unit: '%', min: 10, max: 100, default: 90 },
       { key: 'fanPct', label: '风扇转速', kind: 'number', unit: '%', min: 20, max: 100, default: 30 },
       { key: 'ambientC', label: '进风温度', kind: 'number', unit: '°C', min: 15, max: 40, default: 26 }
     ]
   },
   {
-    id: 'S20', seq: 20, stage: '设施与运维', name: '过温断电应急处置', type: 'scene', scene: 'labRoom', maxScore: 5,
-    description: '空调故障导致 GPU 温度持续升高，请排列应急处置顺序。',
+    id: 'S20', seq: 20, stage: '设施与运维', name: '机房应急分情景处置', type: 'scene', scene: 'labRoom', maxScore: 5,
+    description: '无烟过温、火警、漏液是三种不同的应急情景，分别作出处置决定；人身安全优先，危险场景不能为保存数据延误撤离。',
+    material: '情景一：空调故障导致 GPU 温度持续上升，已确认无烟、无火、无漏液，人员安全。情景二：机房烟感报警并可见烟雾。情景三：液冷机柜漏液传感器报警，地面有液体。',
     fields: [
       {
-        key: 'sequence', label: '处置顺序（用 ↑ ↓ 调整）', kind: 'order',
-        options: ['断开节点电源', '降低负载并限制功耗', '记录事件并上报', '暂停训练任务并保存检查点', '温度仍超限则按序关机', '检查风扇与空调'],
+        key: 'overheat', label: '情景一 无烟过温：处置顺序（用 ↑ ↓ 调整）', kind: 'order',
+        options: ['在安全时间窗内保存检查点', '检查风扇与空调告警', '记录事件并复盘', '停止提交新任务并降低负载', '温度仍上升则受控关机', '立即向值班运维报告'],
+        default: ''
+      },
+      { key: 'fire', label: '情景二 火警：你的第一反应', kind: 'select', options: ['先保存训练检查点再撤离', '按下报警按钮并沿疏散路线撤离到集合点', '取灭火器自行扑救', '返回工位取个人物品后撤离'], default: '先保存训练检查点再撤离' },
+      {
+        key: 'leak', label: '情景三 漏液：应采取的行动（可多选）', kind: 'checklist',
+        options: ['停止靠近漏液机柜并设置警戒', '立即通知值班运维', '自行拔下机柜电源插头', '用纸巾擦干液体后继续实验', '等训练任务优雅关机后再报告'],
         default: ''
       }
     ]

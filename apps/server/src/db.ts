@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite';
 import { migrate } from './ilab/migrate.js';
 
-const dbPath = process.env.DB_PATH ?? resolve(process.cwd(), 'data/zhian.sqlite');
+export const dbPath = process.env.DB_PATH ?? resolve(process.cwd(), 'data/zhian.sqlite');
 mkdirSync(dirname(dbPath), { recursive: true });
 
 // 用 createRequire 加载内置 node:sqlite：运行时与 tsx 相同，同时避免测试打包器把前缀去掉
@@ -92,7 +92,7 @@ function seed(): void {
   if ((row?.c ?? 0) > 0) return;
 
   const insert = db.prepare(
-    'INSERT INTO users (username, password_hash, role, points, created_at) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO users (username, password_hash, role, points, created_at, must_change_password) VALUES (?, ?, ?, ?, ?, 1)'
   );
   const now = new Date().toISOString();
   const accounts: Array<[string, 'admin' | 'teacher' | 'student']> = [
@@ -100,7 +100,7 @@ function seed(): void {
     ['teacher', 'teacher'],
     ['student', 'student']
   ];
-  const lines = ['# 初始账号（仅本机保存，首次登录后请由管理员修改）', ''];
+  const lines = ['# 初始账号（仅本机保存；首次登录须修改密码，改密后请删除本文件）', ''];
   for (const [username, role] of accounts) {
     const password = randomBytes(9).toString('base64url');
     insert.run(username, hashPassword(password), role, role === 'student' ? 100 : 0, now);
@@ -110,8 +110,9 @@ function seed(): void {
   console.log(`[zhian] 已生成初始账号，见 ${resolve(dirname(dbPath), 'initial-accounts.txt')}`);
 }
 
-seed();
+// 先迁移再写种子：种子账号需要 must_change_password 列
 migrate(db);
+seed();
 
 export function nowIso(): string {
   return new Date().toISOString();

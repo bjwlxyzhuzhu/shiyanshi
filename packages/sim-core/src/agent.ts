@@ -5,7 +5,9 @@ export const ACCEPTABLE_LEVELS: Record<string, ToolLevel[]> = {
   文件删除: ['禁止', '需人工确认'],
   发送邮件: ['需人工确认', '禁止'],
   执行系统命令: ['禁止'],
-  联网检索: ['只读', '需人工确认']
+  联网检索: ['只读', '需人工确认'],
+  // 设施高危操作不得交给智能体（R14）
+  机房电源与制冷控制: ['禁止']
 };
 
 export interface AttackStep {

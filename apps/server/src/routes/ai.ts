@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { effectiveModelMeta } from '../ai/modelSettings.js';
 import { BRAND, STEPS, parseList, type AiReviewResponse, type StepInput } from '@zhian/shared';
 import { buildProfile } from '@zhian/scoring';
 import { authRequired, type AuthedRequest } from '../auth.js';
@@ -93,7 +94,7 @@ aiRouter.post('/review', authRequired, async (req: AuthedRequest, res) => {
   db.prepare(`
     INSERT INTO ai_logs (session_id, agent, model, prompt_hash, response, latency_ms, created_at, invocation_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(sessionId, `review:${stepId}`, call.dispatched ? process.env.AI_MODEL ?? null : null, `len:${prompt.length}`, JSON.stringify(risks), Date.now() - startedAt, nowIso(), call.invocationId);
+  `).run(sessionId, `review:${stepId}`, call.dispatched ? effectiveModelMeta()?.model ?? null : null, `len:${prompt.length}`, JSON.stringify(risks), Date.now() - startedAt, nowIso(), call.invocationId);
 
   const payload: AiReviewResponse = { risks, source };
   res.json(payload);

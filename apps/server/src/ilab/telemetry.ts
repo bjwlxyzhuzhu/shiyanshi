@@ -1,3 +1,4 @@
+import { BANK_VERSION } from '@zhian/shared';
 import { db, nowIso } from '../db.js';
 import { STEP_EXPORT_META } from './stepMeta.js';
 
@@ -99,8 +100,8 @@ export function recordAttempt(args: {
   const attemptNo = Number(count.c) + 1;
   const evidence = evidenceFor(args.stepId, window.startMs, window.interactions);
   db.prepare(`
-    INSERT INTO step_attempts (session_id, step_id, attempt_no, request_id, observed_start_ms, observed_end_ms, active_ms, interaction_count, input_hash, raw_score, raw_max_score, evidence_quality, result_json, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(args.sessionId, args.stepId, attemptNo, args.requestId, window.startMs, args.submitMs, window.activeMs, window.interactions, args.inputHash, args.rawScore, args.rawMaxScore, evidence, args.resultJson, nowIso());
+    INSERT INTO step_attempts (session_id, step_id, attempt_no, request_id, observed_start_ms, observed_end_ms, active_ms, interaction_count, input_hash, raw_score, raw_max_score, evidence_quality, result_json, created_at, bank_version)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(args.sessionId, args.stepId, attemptNo, args.requestId, window.startMs, args.submitMs, window.activeMs, window.interactions, args.inputHash, args.rawScore, args.rawMaxScore, evidence, args.resultJson, nowIso(), BANK_VERSION);
   return attemptsFor(args.sessionId, args.stepId).find((row) => row.attempt_no === attemptNo)!;
 }

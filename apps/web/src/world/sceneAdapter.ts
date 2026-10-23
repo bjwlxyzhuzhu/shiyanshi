@@ -136,7 +136,8 @@ export function useSceneState(): SceneState {
     const s04 = freshResult('S04');
     const inspection = {
       verified: Boolean(s04),
-      ambientOk: s04 ? String(s04.result['温度合规'] ?? '').startsWith('是') : null
+      // 进风读数本身超出档案范围；指示灯反映学生是否按档案正确判断并报告
+      ambientOk: s04 ? String(s04.result['判断'] ?? '') === '正确' : null
     };
 
     const stages = STAGES.map((label) => {

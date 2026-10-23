@@ -96,6 +96,87 @@ export interface ProfileItem {
   percent: number;
 }
 
+export interface ModelSettings {
+  enabled: boolean;
+  preset: 'deepseek_official' | 'tokenone_relay' | 'custom';
+  baseUrl: string;
+  model: string;
+  version: string;
+  deployment: string;
+  provider: string;
+  apiKeyConfigured: boolean;
+  apiKeyLast4: string | null;
+  effectiveSource: 'admin' | 'env' | 'none';
+  keyStorage: 'env_key' | 'local_key_file';
+  updatedAt: string | null;
+}
+
+export interface ModelPreset {
+  id: ModelSettings['preset'];
+  label: string;
+  baseUrl: string | null;
+  models: string[];
+  provider: string;
+  deployment: string;
+  note: string;
+}
+
+export interface ModelTestResult {
+  ok: boolean;
+  state: string;
+  httpStatus: number | null;
+  configuredModel: string | null;
+  providerModel: string | null;
+  latencyMs: number;
+  reply: string | null;
+}
+
+export interface ImportRow {
+  line: number;
+  username: string;
+  name: string;
+  role: string;
+  className: string;
+  major: string;
+  status: 'create' | 'update' | 'skip' | 'error';
+  message: string;
+}
+
+export interface ImportResult {
+  dryRun: boolean;
+  summary: { create: number; update: number; skip: number; error: number };
+  rows: ImportRow[];
+  credentials?: Array<{ username: string; name: string; role: string; password: string }>;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  name: string | null;
+  role: 'student' | 'teacher' | 'admin';
+  className: string | null;
+  major: string | null;
+  disabled: number;
+  mustChangePassword: number;
+  external: number;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface ResultRow {
+  sessionId: number;
+  username: string;
+  name: string;
+  className: string | null;
+  major: string | null;
+  source: string;
+  startedAt: string;
+  finishedAt: string | null;
+  totalScore: number;
+  stepsDone: number;
+  legacySteps: number;
+}
+
 const TOKEN_KEY = 'zhian.token';
 const USER_KEY = 'zhian.user';
 
@@ -132,6 +213,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${path}`, { ...init, headers }).catch(() => null);
   if (!response) throw new Error('网络连接中断，请检查网络后重试。');
   const data = await response.json().catch(() => ({}));
+  if (response.status === 403 && (data as { code?: string }).code === 'PASSWORD_CHANGE_REQUIRED') {
+    window.dispatchEvent(new CustomEvent('zhian:password-change'));
+  }
   if (response.status === 429 && (data as { code?: string }).code === 'QUEUED') {
     // 并发已满：通知界面显示排队提示
     window.dispatchEvent(new CustomEvent('zhian:queued', { detail: data }));
@@ -152,12 +236,31 @@ export const api = {
 
   me: () => request<{ user: User }>('/auth/me'),
 
+  changePassword: (oldPassword: string, newPassword: string) =>
+    request<{ ok: boolean; user: User }>('/auth/change-password', { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) }),
+
+  admin: {
+    model: () => request<{ settings: ModelSettings; presets: ModelPreset[] }>('/admin/model'),
+    saveModel: (body: Partial<ModelSettings> & { apiKey?: string; clearApiKey?: boolean }) =>
+      request<{ settings: ModelSettings }>('/admin/model', { method: 'PUT', body: JSON.stringify(body) }),
+    testModel: () => request<ModelTestResult>('/admin/model/test', { method: 'POST' }),
+    importUsers: (text: string, dryRun: boolean, updateExisting: boolean) =>
+      request<ImportResult>('/admin/users/import', { method: 'POST', body: JSON.stringify({ text, dryRun, updateExisting }) }),
+    users: (role: string, q: string) =>
+      request<{ users: AdminUser[] }>(`/admin/users?role=${encodeURIComponent(role)}&q=${encodeURIComponent(q)}`),
+    resetPassword: (id: number) => request<{ username: string; password: string }>(`/admin/users/${id}/reset-password`, { method: 'POST' }),
+    setDisabled: (id: number, disabled: boolean) =>
+      request<{ ok: boolean }>(`/admin/users/${id}/status`, { method: 'POST', body: JSON.stringify({ disabled }) }),
+    results: (className: string) =>
+      request<{ bankVersion: string; totalSteps: number; classes: string[]; results: ResultRow[] }>(`/admin/results?className=${encodeURIComponent(className)}`)
+  },
+
   start: () => request<SessionState>('/experiment/start', { method: 'POST' }),
 
   session: (id: number) => request<SessionState>(`/experiment/${id}`),
 
   records: (id: number) =>
-    request<{ records: Array<{ stepId: string; input: Record<string, number | string>; score: number; maxScore: number; result: Record<string, unknown>; feedback: string }> }>(
+    request<{ bankVersion: string; records: Array<{ stepId: string; input: Record<string, number | string>; score: number; maxScore: number; result: Record<string, unknown>; feedback: string; bankVersion: string }> }>(
       `/experiment/${id}/records`
     ),
 

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../db.js';
+import { effectiveModelConfig } from '../ai/modelSettings.js';
 import { DEPLOYMENTS, ilabConfig, type AiCountPolicy } from './config.js';
 import { sha256Hex } from './signature.js';
 import { AI_SCENARIOS } from './stepMeta.js';
@@ -40,10 +41,8 @@ export interface CallContext {
 }
 
 export async function callModelAudited(messages: ChatMessage[], context: CallContext, options: { timeoutMs?: number; maxAttempts?: number } = {}): Promise<AuditedResult> {
-  const base = process.env.AI_BASE_URL;
-  const key = process.env.AI_API_KEY;
-  const model = process.env.AI_MODEL;
-  const config = ilabConfig();
+  // 管理员配置优先，其次服务器环境变量；密钥只在本函数内使用
+  const config = effectiveModelConfig();
   const invocationId = randomUUID();
   const promptHash = sha256Hex(JSON.stringify(messages));
   const insert = db.prepare(`
@@ -51,7 +50,7 @@ export async function callModelAudited(messages: ChatMessage[], context: CallCon
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  if (!base || !key || !model) {
+  if (!config) {
     const now = Date.now();
     const info = insert.run(invocationId, 1, context.sessionId, context.userId, context.stepId, context.scenario, 'not_configured', null, null, null, null, promptHash, now);
     db.prepare('UPDATE ai_invocations SET ended_ms = ?, final_source = ? WHERE id = ?').run(now, 'rule', Number(info.lastInsertRowid));
@@ -62,17 +61,17 @@ export async function callModelAudited(messages: ChatMessage[], context: CallCon
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const started = Date.now();
     // 先落库“已发出、未结束”，冻结回传前会检查是否仍有未结束的调用
-    const info = insert.run(invocationId, attempt, context.sessionId, context.userId, context.stepId, context.scenario, 'pending', model, config.aiModel.version || null, config.aiModel.deployment || null, config.aiModel.provider || null, promptHash, started);
+    const info = insert.run(invocationId, attempt, context.sessionId, context.userId, context.stepId, context.scenario, 'pending', config.model, config.version || null, config.deployment || null, config.provider || null, promptHash, started);
     const rowId = Number(info.lastInsertRowid);
     const finish = (fields: Record<string, unknown>) => {
       const keys = Object.keys(fields);
       db.prepare(`UPDATE ai_invocations SET ${keys.map((k) => `${k} = ?`).join(', ')}, ended_ms = ? WHERE id = ?`).run(...(Object.values(fields) as Array<string | number | null>), Date.now(), rowId);
     };
     try {
-      const response = await fetchImpl(`${base.replace(/\/$/, '')}/chat/completions`, {
+      const response = await fetchImpl(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model, messages, temperature: 0.2 }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify({ model: config.model, messages, temperature: 0.2 }),
         signal: AbortSignal.timeout(options.timeoutMs ?? 5000)
       });
       if (!response.ok) {

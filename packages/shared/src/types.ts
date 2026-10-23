@@ -8,6 +8,8 @@ export interface User {
   id: number;
   username: string;
   role: Role;
+  /** 首次登录或密码被管理员重置后为 true，须先修改密码 */
+  mustChangePassword?: boolean;
 }
 
 export interface StepField {
@@ -60,6 +62,8 @@ export interface ChartData {
   x: Array<number | string>;
   series: ChartSeries[];
   threshold?: { value: number; label: string };
+  /** 多条参考线（如告警/降频/关断） */
+  thresholds?: Array<{ value: number; label: string }>;
   unit?: string;
 }
 

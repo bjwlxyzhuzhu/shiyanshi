@@ -220,14 +220,14 @@ function AgentConsole({ status, levels, trace, dirty, reduceMotion }: { status: 
         <B p={[0, 0, 0]} s={[1.8, 0.08, 0.66]} m={m.graphite} cast />
         <Screen p={[0, 0.042, 0.02]} size={[1.1, 0.46]} r={[-Math.PI / 2, 0, 0]} style="agent" seed={7} />
       </group>
-      {/* 五个工具端口 */}
+      {/* 六个工具端口（含设施控制：应为“禁止”） */}
       {AGENT_TOOLS.map((tool, index) => {
-        const x = (index - 2) * 0.34;
+        const x = (index - (AGENT_TOOLS.length - 1) / 2) * 0.28;
         return (
           <group key={tool} position={[x, 1.08, -0.3]}>
-            <B p={[0, 0.1, 0]} s={[0.26, 0.24, 0.14]} m={m.screenFrame} cast />
-            <B p={[0, 0.14, 0.072]} s={[0.18, 0.08, 0.01]} m={LEVEL_MAT(levels[index] ?? '自动允许')} />
-            <Label p={[0, 0.04, 0.072]} size={[0.22, 0.06]} text={tool} />
+            <B p={[0, 0.1, 0]} s={[0.24, 0.24, 0.14]} m={m.screenFrame} cast />
+            <B p={[0, 0.14, 0.072]} s={[0.17, 0.08, 0.01]} m={LEVEL_MAT(levels[index] ?? '自动允许')} />
+            <Label p={[0, 0.04, 0.072]} size={[0.21, 0.06]} text={tool.length > 6 ? '设施控制' : tool} />
           </group>
         );
       })}

@@ -4,12 +4,12 @@ import {
   DATA_COLUMNS,
   INJECTION_SAMPLES,
   getStep,
+  SYNTHETIC_DEVICE_PROFILE,
   parseList,
   type ChartData,
   type StepInput
 } from '@zhian/shared';
 import {
-  GPU_LIMIT_C,
   INCIDENT,
   assessRisk,
   bestDesensitizeScore,
@@ -90,10 +90,39 @@ function ordering(stepId: string, input: StepInput, key: string, correct: string
   };
 }
 
+/** 必要先后关系：before 必须排在 after 之前 */
+interface Precedence {
+  before: string;
+  after: string;
+  why: string;
+}
+
+/**
+ * 约束式排序评分：只检查安全上必要的先后关系，不把某一种偏好顺序当作唯一答案
+ * （依据：industry-lab-safety-kit-20261023，“多种合理的安全操作顺序应按前提和必要先后约束判定”）。
+ */
+function precedence(stepId: string, input: StepInput, key: string, rules: Precedence[]): { ratio: number; violated: Precedence[]; seq: string[] } {
+  const seq = sequence(stepId, input, key);
+  const violated = rules.filter((rule) => seq.indexOf(rule.before) > seq.indexOf(rule.after));
+  return { ratio: rules.length ? (rules.length - violated.length) / rules.length : 1, violated, seq };
+}
+
+/** 关键安全错误：该步记 0 分并说明原因，其他答对项不能抵消 */
+function withCritical(evaluation: Evaluation, critical: string[]): Evaluation {
+  if (!critical.length) return evaluation;
+  return {
+    ratio: 0,
+    result: { ...evaluation.result, 关键错误: critical.join('；') },
+    feedback: `关键安全错误：${critical.join('；')}。该步不计分，其他答对项不能抵消。${evaluation.feedback}`
+  };
+}
+
 const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
   S01: (input) => {
-    const correct = ['安全培训合格证明', '实验任务书', '指导教师签字', '数据使用承诺书'];
-    return checklist('S01', input, 'materials', correct);
+    const correct = ['安全培训合格证明', '实验任务书', '指导教师签字', '数据使用承诺书', '机房区域与时段准入授权'];
+    const base = checklist('S01', input, 'materials', correct);
+    const critical = parseList(input.materials).includes('同学代刷门禁记录') ? ['把代刷门禁当作准入依据（身份与区域授权必须本人核验）'] : [];
+    return withCritical(base, critical);
   },
 
   S02: (input) => {
@@ -111,19 +140,29 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
   },
 
   S03: (input) => checklist('S03', input, 'plans', [
-    '数据泄露应急预案', '服务器过温与断电预案', '有害内容输出处置预案', '智能体越权处置预案', '应急联系人与上报路径'
+    '数据泄露应急预案', '服务器过温与供电异常处置预案', '火灾报警与疏散预案（含集合点）', '液冷漏液处置预案', '有害内容输出处置预案', '智能体越权处置预案', '应急联系人与上报路径'
   ]),
 
   S04: (input) => {
-    const correct = ['配电柜接地良好', 'UPS 状态正常', '机柜前后通风无遮挡', '配备气体/二氧化碳灭火器', '门禁记录正常'];
+    const correct = ['核对接地合格记录与标识，缺记录则报告', '只读查看 UPS/PDU 告警指示', '检查进出风无遮挡、盲板与机箱盖在位', '确认安全出口、报警点与集合点位置', '确认疏散与检修通道畅通'];
     const base = checklist('S04', input, 'checks', correct);
-    const ambient = num(input, 'ambientC', 30);
-    const ambientOk = ambient >= 18 && ambient <= 27;
-    return {
-      ratio: base.ratio * 0.8 + (ambientOk ? 0.2 : 0),
-      result: { ...base.result, 环境温度: `${ambient} °C`, 温度合规: ambientOk ? '是' : '否（建议 18–27 °C）' },
-      feedback: `${base.feedback}${ambientOk ? '' : ' 机房温度不在 18–27 °C 区间。'}${parseList(input.checks).includes('配备水基灭火器') ? ' 电气设备火灾不可使用水基灭火器。' : ''}`
-    };
+    const selected = parseList(input.checks);
+    // 合成教学档案中的进风测点读数与允许范围（不是统一的“合规温度”）
+    const reading = 29.5;
+    const [low, high] = SYNTHETIC_DEVICE_PROFILE.inletRangeC!;
+    const expected = reading < low || reading > high ? '超出档案允许范围，报告值班运维' : '在档案允许范围内，可继续';
+    const recorded = num(input, 'inletC', 22);
+    const recordOk = Math.abs(recorded - reading) <= 0.5;
+    const verdict = text(input, 'inletVerdict');
+    const verdictOk = verdict === expected;
+    const critical: string[] = [];
+    if (selected.includes('打开配电柜检查接线端子')) critical.push('学生打开配电柜属于越权设施操作');
+    if (selected.includes('拆下机箱盖以改善散热')) critical.push('拆盖运行会破坏风道与防护');
+    return withCritical({
+      ratio: base.ratio * 0.6 + (recordOk ? 0.15 : 0) + (verdictOk ? 0.25 : 0),
+      result: { ...base.result, 记录读数: `${recorded} °C`, 测点实际读数: `${reading} °C`, 档案允许范围: `${low}–${high} °C（合成教学档案）`, 判断: verdictOk ? '正确' : `应为“${expected}”` },
+      feedback: `${base.feedback}${recordOk ? '' : ' 记录的读数与测点不一致，巡检应如实记录。'}${verdictOk ? '' : ' 进风温度要对照设备档案判断，超出范围应报告而不是继续。'}`
+    }, critical);
   },
 
   S05: (input) => {
@@ -206,11 +245,17 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
 
   S09: (input) => {
     const base = checklist('S09', input, 'locations', ['训练机本地缓存', '对象存储备份', '实验日志中的样本片段', '向量数据库索引', '个人电脑下载副本']);
-    const right = text(input, 'method') === '安全擦除（多次覆写）';
+    const ssd = text(input, 'ssdMethod') === '使用设备支持的加密擦除/安全清除并验证';
+    const cloud = text(input, 'cloudMethod') === '按保留策略删除，并确认历史版本与快照同步清除';
+    const disk = text(input, 'diskMethod') === '消磁或物理销毁，登记资产去向';
+    const notes: string[] = [];
+    if (!ssd) notes.push('固态盘有磨损均衡与预留空间，多次覆写不能保证清除，消磁对固态盘无效，应使用设备支持的安全清除并验证');
+    if (!cloud) notes.push('对象存储的历史版本与快照仍保留数据，应按保留策略一并处理');
+    if (!disk) notes.push('报废机械硬盘出场前应消磁或物理销毁并登记去向，快速格式化可被恢复');
     return {
-      ratio: base.ratio * 0.7 + (right ? 0.3 : 0),
-      result: { ...base.result, 清理方式: text(input, 'method') },
-      feedback: `${base.feedback}${right ? '' : ' 回收站与快速格式化均可被恢复，应使用安全擦除。'}`
+      ratio: base.ratio * 0.4 + (ssd ? 0.2 : 0) + (cloud ? 0.2 : 0) + (disk ? 0.2 : 0),
+      result: { ...base.result, 固态盘: text(input, 'ssdMethod'), 对象存储: text(input, 'cloudMethod'), 机械硬盘: text(input, 'diskMethod') },
+      feedback: `${base.feedback}${notes.length ? ` ${notes.join('；')}。` : ' 清除方式与介质类型匹配。'}`
     };
   },
 
@@ -294,13 +339,15 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     const levels = Object.fromEntries(AGENT_TOOLS.map((tool) => [tool, text(input, `tool_${tool}`)]));
     const attack = simulateExfiltration(levels);
     const ratio = (attack.compliantTools / AGENT_TOOLS.length) * 0.6 + (attack.blocked ? 0.4 : 0);
-    return {
+    const facility = levels['机房电源与制冷控制'] ?? '';
+    const critical = facility && facility !== '禁止' ? ['智能体被授予机房电源与制冷控制权限（设施高危操作不得交给智能体）'] : [];
+    return withCritical({
       ratio,
       result: { 攻击结果: attack.blocked ? '外发被拦截' : '数据被外发', 合规工具数: `${attack.compliantTools}/${AGENT_TOOLS.length}`, trace: attack.trace },
       feedback: attack.blocked
         ? attack.compliantTools === AGENT_TOOLS.length ? '最小权限配置正确，攻击被拦截。' : '攻击被拦截，但部分工具权限仍偏宽或偏严。'
         : '攻击成功：至少一条外发通道处于“自动允许”。'
-    };
+    }, critical);
   },
 
   S17: (input) => {
@@ -324,33 +371,82 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     };
   },
 
-  S18: (input) => ordering('S18', input, 'sequence', [
-    '确认市电与 UPS 正常', '合上配电柜总开关', '开启机柜 PDU', '开启存储与网络设备', '开启 GPU 计算节点', '检查 BMC 告警与温度'
-  ]),
+  S18: (input) => {
+    const order = precedence('S18', input, 'sequence', [
+      { before: '确认任务许可与使用时段', after: '提交逻辑启动（作业调度）', why: '没有任务许可不能启动' },
+      { before: '核对获批的功率与制冷预算', after: '提交逻辑启动（作业调度）', why: '有插座不等于可以满载，须先核对预算' },
+      { before: '在 BMC 中只读查看电源、风扇、温度告警', after: '提交逻辑启动（作业调度）', why: '告警未解释前不启动高负载' },
+      { before: '确认进风温度在设备档案范围内', after: '提交逻辑启动（作业调度）', why: '环境条件须在启动前确认' },
+      { before: '提交逻辑启动（作业调度）', after: '启动后观察温度与功耗', why: '启动后需持续观察' }
+    ]);
+    const roles = checklist('S18', input, 'facilityOnly', ['合上配电柜总开关', '闭合机柜 PDU 断路器', 'UPS 维护与电池更换']);
+    const selected = parseList(input.facilityOnly);
+    const critical = selected.includes('合上配电柜总开关') ? [] : ['把合配电柜总开关当作学生可做的操作（属于授权专业人员的设施作业）'];
+    return withCritical({
+      ratio: order.ratio * 0.6 + roles.ratio * 0.4,
+      result: { 必要先后关系: `${order.ratio === 1 ? '全部满足' : `违反 ${order.violated.length} 条`}`, 角色区分正确率: roles.result.正确率 },
+      feedback: `${order.violated.length ? `顺序问题：${order.violated.map((rule) => rule.why).join('；')}。` : '启动前核验顺序满足全部必要前提。'}${roles.feedback === '全部正确。' ? '' : ` 角色区分：${roles.feedback}`}`
+    }, critical);
+  },
 
   S19: (input) => {
+    const profile = SYNTHETIC_DEVICE_PROFILE;
+    const t = profile.gpuThresholds;
     const load = num(input, 'loadPct', 90);
+    const metric = text(input, 'metric');
     const outcome = simulateGpuThermal(load, num(input, 'fanPct', 30), num(input, 'ambientC', 26));
-    const tempScore = outcome.peakC <= GPU_LIMIT_C ? 1 : clamp01(1 - (outcome.peakC - GPU_LIMIT_C) / 20);
-    const loadScore = load >= 70 ? 1 : load / 70;
     const chart: ChartData = {
-      title: 'GPU 温度曲线',
+      title: 'GPU 核心温度曲线（教学热路模型）',
       x: outcome.timeS,
-      series: [{ name: 'GPU 温度', values: outcome.tempC }],
-      threshold: { value: GPU_LIMIT_C, label: '上限 83 °C' },
+      series: [{ name: 'GPU 核心温度', values: outcome.tempC }],
+      threshold: { value: t.warningC!, label: `告警 ${t.warningC} °C` },
+      thresholds: [
+        { value: t.warningC!, label: `告警 ${t.warningC} °C` },
+        { value: t.slowdownC!, label: `降频 ${t.slowdownC} °C` },
+        { value: t.shutdownC!, label: `关断 ${t.shutdownC} °C` }
+      ],
       unit: '°C'
     };
+    const metricOk = metric === profile.gpuMetric;
+    const level = outcome.peakC >= t.shutdownC! ? '达到关断阈值' : outcome.peakC >= t.slowdownC! ? '达到降频阈值' : outcome.peakC >= t.warningC! ? '超过告警阈值' : '低于告警阈值';
+    const safe = outcome.peakC < t.warningC!;
+    const meetsTask = load >= 85;
+    // 安全先行：超过告警阈值时只计测点选择分，负载再高也不加分
+    const ratio = (metricOk ? 0.2 : 0) + (safe ? 0.6 + (meetsTask ? 0.2 : 0) : 0);
+    const metricNote = metricOk ? '' : profile.unavailableSensors.includes(metric)
+      ? ` 设备档案未提供“${metric}”，应记为未知，不能套用核心温度阈值。`
+      : ` 阈值对应的测点是“${profile.gpuMetric}”，进风温度与芯片温度不能混用。`;
     return {
-      ratio: tempScore * 0.6 + loadScore * 0.4,
-      result: { 峰值温度: `${outcome.peakC} °C`, 稳态温度: `${outcome.steadyC} °C`, 功耗: `${outcome.powerW} W`, chart },
-      feedback: outcome.peakC > GPU_LIMIT_C ? '峰值超过 83 °C，应提高风扇转速或降低进风温度。'
-        : load < 70 ? '温度合规，但负载过低会拖慢训练，可在保证温度的前提下提高负载。' : '温度与负载兼顾良好。'
+      ratio,
+      result: { 研判测点: metric, 峰值温度: `${outcome.peakC} °C`, 温度状态: level, 稳态温度: `${outcome.steadyC} °C`, 功耗: `${outcome.powerW} W`, 任务负载要求: meetsTask ? '满足' : '未满足（要求 ≥ 85%）', 设备档案: profile.label, chart },
+      feedback: `${safe ? meetsTask ? '温度低于告警阈值且满足任务负载要求。' : '温度安全，但负载未达到任务要求。' : `峰值${level}（${outcome.peakC} °C），应先降低温度；超限时负载再高也不能弥补。`}${metricNote}`
     };
   },
 
-  S20: (input) => ordering('S20', input, 'sequence', [
-    '暂停训练任务并保存检查点', '降低负载并限制功耗', '检查风扇与空调', '温度仍超限则按序关机', '断开节点电源', '记录事件并上报'
-  ]),
+  S20: (input) => {
+    const overheat = precedence('S20', input, 'overheat', [
+      { before: '立即向值班运维报告', after: '在安全时间窗内保存检查点', why: '报告不应等到最后，应先报告' },
+      { before: '立即向值班运维报告', after: '温度仍上升则受控关机', why: '受控关机前应已报告值班' },
+      { before: '停止提交新任务并降低负载', after: '温度仍上升则受控关机', why: '先降负载，仍上升再关机' },
+      { before: '在安全时间窗内保存检查点', after: '温度仍上升则受控关机', why: '关机前在安全时间窗内保存' },
+      { before: '检查风扇与空调告警', after: '记录事件并复盘', why: '复盘放在处置之后' },
+      { before: '温度仍上升则受控关机', after: '记录事件并复盘', why: '复盘放在处置之后' }
+    ]);
+    const fire = text(input, 'fire');
+    const leakSelected = parseList(input.leak);
+    const leak = checklist('S20', input, 'leak', ['停止靠近漏液机柜并设置警戒', '立即通知值班运维']);
+    const critical: string[] = [];
+    if (fire !== '按下报警按钮并沿疏散路线撤离到集合点') critical.push(`火警时“${fire}”会延误报警与撤离`);
+    if (leakSelected.includes('自行拔下机柜电源插头')) critical.push('漏液时学生自行拔电有触电风险');
+    if (leakSelected.includes('用纸巾擦干液体后继续实验')) critical.push('漏液未处置就继续实验');
+    if (leakSelected.includes('等训练任务优雅关机后再报告')) critical.push('漏液时等待优雅关机会延误报告');
+    if (overheat.seq[overheat.seq.length - 1] === '立即向值班运维报告') critical.push('无烟过温时把报告放在最后');
+    return withCritical({
+      ratio: overheat.ratio * 0.5 + 0.25 + leak.ratio * 0.25,
+      result: { 无烟过温必要先后: overheat.violated.length ? `违反 ${overheat.violated.length} 条` : '全部满足', 火警: fire, 漏液: leak.result.正确率 },
+      feedback: `${overheat.violated.length ? `无烟过温：${[...new Set(overheat.violated.map((rule) => rule.why))].join('；')}。` : '无烟过温处置满足全部必要先后。'}${leak.feedback === '全部正确。' ? '' : ` 漏液：${leak.feedback}`}`
+    }, critical);
+  },
 
   S21: (input) => {
     const window = text(input, 'window');

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Admin } from './pages/Admin';
+import { ChangePassword } from './pages/ChangePassword';
 import { Experiment } from './pages/Experiment';
 import { Login } from './pages/Login';
 import { useSessionStore } from './stores/session';
@@ -14,6 +16,8 @@ import { useWorldStore, webglSupported } from './world/worldStore';
  */
 export function App() {
   const token = useSessionStore((state) => state.token);
+  const user = useSessionStore((state) => state.user);
+  const page = useSessionStore((state) => state.page);
   const htmlMode = useWorldStore((state) => state.htmlMode);
   const setHtmlMode = useWorldStore((state) => state.setHtmlMode);
   const [webgl] = useState(() => webglSupported());
@@ -33,6 +37,16 @@ export function App() {
       setIlabError(params.get('ilab_error'));
       clean();
     }
+  }, []);
+
+  // 服务端要求先改初始密码（例如旧的本地登录状态）：切到改密页
+  useEffect(() => {
+    const onRequired = () => {
+      const current = useSessionStore.getState().user;
+      if (current && !current.mustChangePassword) useSessionStore.getState().setUser({ ...current, mustChangePassword: true });
+    };
+    window.addEventListener('zhian:password-change', onRequired);
+    return () => window.removeEventListener('zhian:password-change', onRequired);
   }, []);
 
   useEffect(() => {
@@ -61,7 +75,10 @@ export function App() {
       ) : (
         <div className="backdrop-static" aria-hidden />
       )}
-      {token ? <Experiment scene={scene} /> : <Login ilabError={ilabError} />}
+      {!token ? <Login ilabError={ilabError} />
+        : user?.mustChangePassword ? <ChangePassword />
+          : page === 'admin' && user && user.role !== 'student' ? <Admin />
+            : <Experiment scene={scene} />}
     </div>
   );
 }
