@@ -9,11 +9,35 @@ export function passwordPolicyIssues(password: string, username = ''): string[] 
   return issues;
 }
 
-/** 导入师生名单的列（顺序即模板顺序） */
-export const IMPORT_COLUMNS = ['账号', '姓名', '角色', '班级', '专业'] as const;
+/** 学生与教师分开导入，列顺序即模板顺序 */
+export const STUDENT_IMPORT_COLUMNS = ['学号', '姓名', '班级', '专业'] as const;
+export const TEACHER_IMPORT_COLUMNS = ['工号', '姓名', '职称', '院系'] as const;
 
-export const IMPORT_TEMPLATE = [
-  IMPORT_COLUMNS.join(','),
-  '2026010101,示例学生,学生,机械2601,机械设计制造及其自动化',
-  'T2026001,示例教师,教师,,'
+export const STUDENT_IMPORT_TEMPLATE = [
+  STUDENT_IMPORT_COLUMNS.join(','),
+  '2025010101,示例学生,2025级人工智能1班,人工智能'
 ].join('\n');
+
+export const TEACHER_IMPORT_TEMPLATE = [
+  TEACHER_IMPORT_COLUMNS.join(','),
+  'T2026001,示例教师,副教授,计算机学院'
+].join('\n');
+
+/** 学期：某学年的第一或第二学期，如“2026—2027 学年第一学期” */
+export interface Term {
+  startYear: number;
+  termNo: 1 | 2;
+}
+
+export function termLabel(term: Term): string {
+  return `${term.startYear}—${term.startYear + 1} 学年${term.termNo === 1 ? '第一' : '第二'}学期`;
+}
+
+/** 按日期推算默认学期：8 月起为新学年第一学期，2–7 月为上一学年第二学期 */
+export function defaultTerm(date = new Date()): Term {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  if (month >= 8) return { startYear: year, termNo: 1 };
+  if (month === 1) return { startYear: year - 1, termNo: 1 };
+  return { startYear: year - 1, termNo: 2 };
+}

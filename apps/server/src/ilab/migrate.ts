@@ -243,4 +243,35 @@ export function migrate(db: DatabaseSync): void {
     `);
     db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(4, new Date().toISOString());
   }
+
+  if (!applied.has(5)) {
+    // 课程（按学期）与教师、教学班的关联；学生通过所在班级关联到课程
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT '',
+        term_start_year INTEGER NOT NULL,
+        term_no INTEGER NOT NULL,
+        total_hours INTEGER,
+        credits REAL,
+        created_at TEXT NOT NULL,
+        UNIQUE (code, term_start_year, term_no)
+      );
+      CREATE TABLE IF NOT EXISTS course_teachers (
+        course_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        PRIMARY KEY (course_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS course_classes (
+        course_id INTEGER NOT NULL,
+        class_name TEXT NOT NULL,
+        PRIMARY KEY (course_id, class_name)
+      );
+    `);
+    addColumn(db, 'users', 'title', 'TEXT');
+    addColumn(db, 'users', 'department', 'TEXT');
+    db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(5, new Date().toISOString());
+  }
 }

@@ -43,7 +43,7 @@ function useStepStatus(step: StepDefinition): Status {
   return { kind: 'idle', text: '尚未提交' };
 }
 
-/** S16：按实际 trace 绘制——读取为根，外发分支只在读取执行后出现 */
+/** S13：按实际 trace 绘制——读取为根，外发分支只在读取执行后出现 */
 function TraceView({ trace }: { trace: TraceHop[] }) {
   const [root, ...branches] = trace;
   const outcomeClass = (outcome: string) => (outcome === '执行' ? 'run' : outcome === '被拦截' ? 'blocked' : 'pending');
@@ -106,13 +106,13 @@ function ResultBlock({ step, result, dirty }: { step: StepDefinition; result: St
           ))}
         </dl>
       ) : null}
-      {step.id === 'S16' && trace ? (
+      {step.id === 'S13' && trace ? (
         <div className="block">
           <h4>攻击路径 · 依据服务端模拟</h4>
           <TraceView trace={trace} />
         </div>
       ) : null}
-      {step.id === 'S20' ? <p className="muted small">本步只核验分情景处置决定，没有逐时刻冷却模拟；场景中只显示“预案核验完成”状态。</p> : null}
+      {step.id === 'S18' ? <p className="muted small">本步只核验分情景处置决定，没有逐时刻冷却模拟；场景中只显示“预案核验完成”状态。</p> : null}
     </section>
   );
 }
@@ -152,8 +152,8 @@ function PreviewBlock({ step }: { step: StepDefinition }) {
       {preview?.chart ? (
         <ChartView
           chart={preview.chart}
-          xLabel={step.id === 'S19' ? '模拟时间 / s' : undefined}
-          note={step.id === 'S19' ? '教学热路模型计算的仿真曲线，非本机或真实设备测量；参考线为合成教学档案中的告警/降频/关断阈值，只适用于 GPU 核心温度测点。' : '后端仿真预览，不含评分。'}
+          xLabel={step.id === 'S16' ? '模拟时间 / s' : undefined}
+          note={step.id === 'S16' ? '教学热路模型计算的仿真曲线，非本机或真实设备测量；参考线为设备档案中的告警/降频/关断阈值，只适用于 GPU 核心温度测点。' : '后端仿真预览，不含评分。'}
         />
       ) : null}
       {!preview?.chart && !preview?.preview && preview?.status === 'ok' ? <p className="muted small">后端没有返回可显示的预览。</p> : null}
@@ -321,16 +321,16 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
             <p>{step.material}</p>
           </details>
         ) : null}
-        {step.id === 'S04' || step.id === 'S19' ? (
+        {step.id === 'S04' || step.id === 'S16' ? (
           <details className="material profile-banner" open>
-            <summary>设备档案 <span className="source-chip warn">合成教学档案 · 非真实厂商参数</span></summary>
+            <summary>设备档案</summary>
             <p>{describeProfile(SYNTHETIC_DEVICE_PROFILE)}</p>
             <p className="muted small">真实机房须使用经运维与厂商资料确认、批准后的档案；未确认的参数记为未知，不补 0、不推定安全。</p>
           </details>
         ) : null}
         <KnowledgeBlock step={step} />
         {step.id === 'S09' ? <p className="note">本步骤为“实验结束后清理”的预演：只记录你的选择，不会删除任何真实文件。</p> : null}
-        {step.id === 'S20' ? <p className="note warn">演练示意：无烟过温、火警、漏液三个情景分别处置，人身安全优先。本步只核验你的决定，不模拟处置后的温度变化，也不会触发任何真实报警或设备操作。</p> : null}
+        {step.id === 'S18' ? <p className="note warn">演练示意：无烟过温与火警两个情景分别处置，人身安全优先。本步只核验你的决定，不模拟处置后的温度变化，也不会触发任何真实报警或设备操作。</p> : null}
         {!canSubmit ? <p className="note">这是已提交步骤的只读回看。重新提交历史步骤会使服务端进度回退，因此这里不提供提交。</p> : null}
 
         {step.fields.length ? (
@@ -351,7 +351,7 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
         ) : null}
 
         {PREVIEW_STEPS.has(step.id) && canSubmit ? <PreviewBlock step={step} /> : null}
-        {step.id === 'S16' && !result ? (
+        {step.id === 'S13' && !result ? (
           <section className="preview-block">
             <header><h3>攻击路径</h3><span className="preview-status">待验证</span></header>
             <p className="muted small">提交后由服务端模拟一次诱导外发攻击，按返回结果显示执行、被拦截或待人工确认。</p>
@@ -383,7 +383,7 @@ export function OperationPanel({ stepId, docked = false }: { stepId: string; doc
         {docked ? null : <button type="button" className="ghost" onClick={returnToWorld}>返回场景</button>}
         {canSubmit ? (
           <button type="button" className={showContinue ? 'ghost' : 'primary'} onClick={onSubmit} disabled={isSubmitting || Boolean(submitting)}>
-            {isSubmitting ? '提交中…' : result ? (step.id === 'S24' ? '重新提交实验记录' : '重新提交') : step.id === 'S24' ? '提交实验记录' : step.id === 'S16' ? '提交并验证' : '提交本步'}
+            {isSubmitting ? '提交中…' : result ? (step.id === 'S24' ? '重新提交实验记录' : '重新提交') : step.id === 'S24' ? '提交实验记录' : step.id === 'S13' ? '提交并验证' : '提交本步'}
           </button>
         ) : null}
         {showContinue ? (

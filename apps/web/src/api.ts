@@ -1,6 +1,7 @@
 import type {
   AiReviewResponse,
   PrelabQuestion,
+  Term,
   LevelAttainment,
   ChartData,
   PreviewImage,
@@ -146,13 +147,39 @@ export interface ModelTestResult {
   reply: string | null;
 }
 
+export interface CourseItem {
+  id: number;
+  code: string;
+  name: string;
+  category: string;
+  termStartYear: number;
+  termNo: 1 | 2;
+  termLabel: string;
+  totalHours: number | null;
+  credits: number | null;
+  teachers: Array<{ id: number; username: string; name: string }>;
+  classes: string[];
+  students: number;
+}
+
+export interface CourseInput {
+  code: string;
+  name: string;
+  category: string;
+  termStartYear: number;
+  termNo: 1 | 2;
+  totalHours: number | '' | null;
+  credits: number | '' | null;
+  teacherIds: number[];
+  classes: string;
+}
+
 export interface ImportRow {
   line: number;
   username: string;
   name: string;
-  role: string;
-  className: string;
-  major: string;
+  col3: string;
+  col4: string;
   status: 'create' | 'update' | 'skip' | 'error';
   message: string;
 }
@@ -171,6 +198,8 @@ export interface AdminUser {
   role: 'student' | 'teacher' | 'admin';
   className: string | null;
   major: string | null;
+  title: string | null;
+  department: string | null;
   disabled: number;
   mustChangePassword: number;
   external: number;
@@ -262,8 +291,15 @@ export const api = {
     saveModel: (body: Partial<ModelSettings> & { apiKey?: string; clearApiKey?: boolean }) =>
       request<{ settings: ModelSettings }>('/admin/model', { method: 'PUT', body: JSON.stringify(body) }),
     testModel: () => request<ModelTestResult>('/admin/model/test', { method: 'POST' }),
-    importUsers: (text: string, dryRun: boolean, updateExisting: boolean) =>
-      request<ImportResult>('/admin/users/import', { method: 'POST', body: JSON.stringify({ text, dryRun, updateExisting }) }),
+    importUsers: (kind: 'student' | 'teacher', text: string, dryRun: boolean, updateExisting: boolean) =>
+      request<ImportResult>('/admin/users/import', { method: 'POST', body: JSON.stringify({ kind, text, dryRun, updateExisting }) }),
+    term: () => request<{ term: Term; label: string }>('/admin/term'),
+    saveTerm: (term: Term) => request<{ term: Term; label: string }>('/admin/term', { method: 'PUT', body: JSON.stringify(term) }),
+    courses: (term?: Term) =>
+      request<{ term: Term; label: string; courses: CourseItem[] }>(`/admin/courses${term ? `?startYear=${term.startYear}&termNo=${term.termNo}` : ''}`),
+    saveCourse: (id: number | null, body: CourseInput) =>
+      request<{ course: CourseItem }>(id ? `/admin/courses/${id}` : '/admin/courses', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }),
+    deleteCourse: (id: number) => request<{ ok: boolean }>(`/admin/courses/${id}`, { method: 'DELETE' }),
     users: (role: string, q: string) =>
       request<{ users: AdminUser[] }>(`/admin/users?role=${encodeURIComponent(role)}&q=${encodeURIComponent(q)}`),
     resetPassword: (id: number) => request<{ username: string; password: string }>(`/admin/users/${id}/reset-password`, { method: 'POST' }),
@@ -272,8 +308,8 @@ export const api = {
     review: (sessionId: number, grade: string, comment: string) =>
       request<{ ok: boolean }>(`/admin/results/${sessionId}/review`, { method: 'PUT', body: JSON.stringify({ grade, comment }) }),
     aiAudit: () => request<AiAuditData>('/admin/ai-audit'),
-    results: (className: string) =>
-      request<{ bankVersion: string; totalSteps: number; classes: string[]; results: ResultRow[] }>(`/admin/results?className=${encodeURIComponent(className)}`)
+    results: (className: string, courseId?: number | null) =>
+      request<{ bankVersion: string; totalSteps: number; classes: string[]; results: ResultRow[] }>(`/admin/results?className=${encodeURIComponent(className)}${courseId ? `&courseId=${courseId}` : ''}`)
   },
 
   start: () => request<SessionState>('/experiment/start', { method: 'POST' }),

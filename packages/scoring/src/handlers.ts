@@ -117,6 +117,134 @@ function withCritical(evaluation: Evaluation, critical: string[]): Evaluation {
   };
 }
 
+
+/** 合并步骤：按权重汇总各部分得分；结果键冲突时加部分名前缀 */
+function combine(parts: Array<[number, string, Evaluation]>): Evaluation {
+  const result: Record<string, unknown> = {};
+  for (const [, label, part] of parts) {
+    for (const [key, value] of Object.entries(part.result)) result[key in result ? `${label}${key}` : key] = value;
+  }
+  return {
+    ratio: parts.reduce((sum, [weight, , part]) => sum + weight * part.ratio, 0),
+    result,
+    feedback: parts.map(([, label, part]) => `【${label}】${part.feedback}`).join(' ')
+  };
+}
+
+function authCheck(input: StepInput): Evaluation {
+  const base = checklist('S07', input, 'missing', ['同意范围覆盖模型训练', '已约定数据保存期限']);
+  const right = text(input, 'conclusion') === '补充授权后可用';
+  return {
+    ratio: base.ratio * 0.5 + (right ? 0.5 : 0),
+    result: { ...base.result, 结论: text(input, 'conclusion') },
+    feedback: `${base.feedback}${right ? '' : ' 原同意范围不含模型训练，应“补充授权后可用”。'}`
+  };
+}
+
+function licenseCheck(input: StepInput): Evaluation {
+  const license = text(input, 'license');
+  const usage = text(input, 'usage');
+  const truth = license === '未声明许可' ? '需进一步确认'
+    : license === '研究许可（禁止商用）' && usage === '对外商业服务' ? '不合规' : '合规';
+  const ratio = (license === '研究许可（禁止商用）' ? 0.3 : 0) + (usage === '课程实验' ? 0.2 : 0)
+    + (text(input, 'licenseConclusion') === truth ? 0.5 : 0);
+  return {
+    ratio,
+    result: { 按你填写的条件应得结论: truth },
+    feedback: ratio >= 1 ? '许可核查准确。' : '情景为“研究许可（禁止商用）+ 课程实验”，结论应为合规；若对外商用则不合规。'
+  };
+}
+
+function keyLeakCheck(input: StepInput): Evaluation {
+  const outcome = detectKeyLeak(num(input, 'threshold', 400));
+  const actionRight = text(input, 'action') === '立即吊销并轮换密钥';
+  const chart: ChartData = {
+    title: 'API 调用量（次/小时）',
+    x: outcome.calls.map((_, hour) => `${hour}时`),
+    series: [{ name: '调用量', values: outcome.calls }],
+    threshold: { value: num(input, 'threshold', 400), label: '告警阈值' }
+  };
+  return {
+    ratio: outcome.f1 * 0.6 + (actionRight ? 0.4 : 0),
+    result: { 告警时段: outcome.flaggedHours.map((hour) => `${hour}时`).join('、') || '无', 检测F1: outcome.f1, chart },
+    feedback: `${outcome.fp ? '阈值过低，白天正常调用被误报。' : outcome.fn ? '阈值过高，夜间异常未被发现。' : '告警阈值合理。'}${actionRight ? '' : ' 密钥疑似泄露时应立即吊销并轮换。'}`
+  };
+}
+
+function keyScopeCheck(input: StepInput): Evaluation {
+  const selected = parseList(input.scopes);
+  const scopeRatio = checklistAccuracy(selected, ['模型推理', '模型微调'], options('S11', 'scopes'));
+  const ttl = num(input, 'ttlDays', 365);
+  const quota = num(input, 'quota', 100000);
+  const ttlOk = ttl <= 30;
+  const quotaOk = quota > 0 && quota <= 5000;
+  return {
+    ratio: scopeRatio * 0.6 + (ttlOk ? 0.2 : 0) + (quotaOk ? 0.2 : 0),
+    result: { 权限正确率: `${Math.round(scopeRatio * 100)}%`, 有效期: `${ttl} 天`, 每日上限: `${quota} 次` },
+    feedback: [
+      missingAndWrong(selected, ['模型推理', '模型微调']),
+      ttlOk ? '' : '有效期建议不超过 30 天。',
+      quotaOk ? '' : '应设置每日调用上限（建议 ≤5000 次）。'
+    ].filter(Boolean).join(' ')
+  };
+}
+
+function injectionCheck(input: StepInput): Evaluation {
+  const truth = INJECTION_SAMPLES.filter((sample) => detectInjection(sample).injected);
+  const base = checklist('S12', input, 'flagged', truth);
+  return {
+    ratio: base.ratio,
+    result: {
+      ...base.result,
+      verdicts: INJECTION_SAMPLES.map((sample) => detectInjection(sample))
+    },
+    feedback: base.feedback
+  };
+}
+
+function contentPolicyCheck(input: StepInput): Evaluation {
+  const truth = ['拒绝并说明', '正常回答', '拒绝并说明', '转人工并提供求助渠道'];
+  const wrong = CONTENT_CASES.map((_, index) => index).filter((index) => text(input, `case${index + 1}`) !== truth[index]);
+  return {
+    ratio: (CONTENT_CASES.length - wrong.length) / CONTENT_CASES.length,
+    result: { 处置正确: `${CONTENT_CASES.length - wrong.length}/${CONTENT_CASES.length}` },
+    feedback: wrong.length ? wrong.map((index) => `“${CONTENT_CASES[index]}”应“${truth[index]}”`).join('；') : '处置策略全部正确。'
+  };
+}
+
+function auditTrace(input: StepInput): Evaluation {
+  const window = text(input, 'window');
+  const accountRight = text(input, 'account') === INCIDENT.account;
+  const windowRight = window === INCIDENT.window;
+  const perHour = eventsPerHour();
+  const chart: ChartData = {
+    title: '审计事件分布（次/小时）',
+    x: perHour.hours.map((hour) => `${hour}时`),
+    series: [
+      { name: '全部事件', values: perHour.total },
+      { name: '外部发送', values: perHour.external }
+    ]
+  };
+  return {
+    ratio: (accountRight ? 0.7 : 0) + (windowRight ? 0.3 : 0),
+    result: {
+      时间窗内事件: eventsInWindow(window).map((event) => `${event.time} ${event.account} ${event.action}`).join('；') || '无',
+      chart
+    },
+    feedback: accountRight && windowRight ? '追溯准确：svc_agent 在 02:00–04:00 外发了企业质检数据。' : '请查看“外部发送”出现的时段，并定位对应账号。'
+  };
+}
+
+function reportCheck(input: StepInput): Evaluation {
+  const base = checklist('S22', input, 'elements', ['事件时间线', '影响的数据类型与规模', '已采取的处置措施', '根因分析', '整改措施与责任人']);
+  const right = text(input, 'severity') === '较大';
+  return {
+    ratio: base.ratio * 0.7 + (right ? 0.3 : 0),
+    result: { ...base.result, 事件等级: text(input, 'severity') },
+    feedback: `${base.feedback}${right ? '' : ' 2000 条含个人信息记录外泄，应定为“较大”事件。'}`
+  };
+}
+
 const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
   S01: (input) => {
     const correct = ['安全培训合格证明', '实验任务书', '指导教师签字', '数据使用承诺书', '机房区域与时段准入授权'];
@@ -147,7 +275,7 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     const correct = ['核对接地合格记录与标识，缺记录则报告', '只读查看 UPS/PDU 告警指示', '检查进出风无遮挡、盲板与机箱盖在位', '确认安全出口、报警点与集合点位置', '确认疏散与检修通道畅通'];
     const base = checklist('S04', input, 'checks', correct);
     const selected = parseList(input.checks);
-    // 合成教学档案中的进风测点读数与允许范围（不是统一的“合规温度”）
+    // 设备档案中的进风测点读数与允许范围（不是统一的“合规温度”）
     const reading = 29.5;
     const [low, high] = SYNTHETIC_DEVICE_PROFILE.inletRangeC!;
     const expected = reading < low || reading > high ? '超出档案允许范围，报告值班运维' : '在档案允许范围内，可继续';
@@ -160,7 +288,7 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     if (selected.includes('拆下机箱盖以改善散热')) critical.push('拆盖运行会破坏风道与防护');
     return withCritical({
       ratio: base.ratio * 0.6 + (recordOk ? 0.15 : 0) + (verdictOk ? 0.25 : 0),
-      result: { ...base.result, 记录读数: `${recorded} °C`, 测点实际读数: `${reading} °C`, 档案允许范围: `${low}–${high} °C（合成教学档案）`, 判断: verdictOk ? '正确' : `应为“${expected}”` },
+      result: { ...base.result, 记录读数: `${recorded} °C`, 测点实际读数: `${reading} °C`, 档案允许范围: `${low}–${high} °C`, 判断: verdictOk ? '正确' : `应为“${expected}”` },
       feedback: `${base.feedback}${recordOk ? '' : ' 记录的读数与测点不一致，巡检应如实记录。'}${verdictOk ? '' : ' 进风温度要对照设备档案判断，超出范围应报告而不是继续。'}`
     }, critical);
   },
@@ -214,15 +342,8 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     };
   },
 
-  S07: (input) => {
-    const base = checklist('S07', input, 'missing', ['同意范围覆盖模型训练', '已约定数据保存期限']);
-    const right = text(input, 'conclusion') === '补充授权后可用';
-    return {
-      ratio: base.ratio * 0.5 + (right ? 0.5 : 0),
-      result: { ...base.result, 结论: text(input, 'conclusion') },
-      feedback: `${base.feedback}${right ? '' : ' 原同意范围不含模型训练，应“补充授权后可用”。'}`
-    };
-  },
+
+  S07: (input) => combine([[0.6, '数据授权', authCheck(input)], [0.4, '模型许可', licenseCheck(input)]]),
 
   S08: (input) => {
     const outcome = detectPoisoning(text(input, 'method'), num(input, 'threshold', 1.5));
@@ -264,78 +385,16 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     '通知受影响的个人', '修复漏洞并轮换凭据', '复盘并落实整改'
   ]),
 
-  S11: (input) => {
-    const license = text(input, 'license');
-    const usage = text(input, 'usage');
-    const truth = license === '未声明许可' ? '需进一步确认'
-      : license === '研究许可（禁止商用）' && usage === '对外商业服务' ? '不合规' : '合规';
-    const ratio = (license === '研究许可（禁止商用）' ? 0.3 : 0) + (usage === '课程实验' ? 0.2 : 0)
-      + (text(input, 'conclusion') === truth ? 0.5 : 0);
-    return {
-      ratio,
-      result: { 按你填写的条件应得结论: truth },
-      feedback: ratio >= 1 ? '许可核查准确。' : '情景为“研究许可（禁止商用）+ 课程实验”，结论应为合规；若对外商用则不合规。'
-    };
-  },
 
-  S12: (input) => {
-    const selected = parseList(input.scopes);
-    const scopeRatio = checklistAccuracy(selected, ['模型推理', '模型微调'], options('S12', 'scopes'));
-    const ttl = num(input, 'ttlDays', 365);
-    const quota = num(input, 'quota', 100000);
-    const ttlOk = ttl <= 30;
-    const quotaOk = quota > 0 && quota <= 5000;
-    return {
-      ratio: scopeRatio * 0.6 + (ttlOk ? 0.2 : 0) + (quotaOk ? 0.2 : 0),
-      result: { 权限正确率: `${Math.round(scopeRatio * 100)}%`, 有效期: `${ttl} 天`, 每日上限: `${quota} 次` },
-      feedback: [
-        missingAndWrong(selected, ['模型推理', '模型微调']),
-        ttlOk ? '' : '有效期建议不超过 30 天。',
-        quotaOk ? '' : '应设置每日调用上限（建议 ≤5000 次）。'
-      ].filter(Boolean).join(' ')
-    };
-  },
+
+
+
+
+  S11: (input) => combine([[0.4, '密钥权限', keyScopeCheck(input)], [0.6, '泄露检测', keyLeakCheck(input)]]),
+
+  S12: (input) => combine([[0.55, '提示注入', injectionCheck(input)], [0.45, '内容处置', contentPolicyCheck(input)]]),
 
   S13: (input) => {
-    const outcome = detectKeyLeak(num(input, 'threshold', 400));
-    const actionRight = text(input, 'action') === '立即吊销并轮换密钥';
-    const chart: ChartData = {
-      title: 'API 调用量（次/小时）',
-      x: outcome.calls.map((_, hour) => `${hour}时`),
-      series: [{ name: '调用量', values: outcome.calls }],
-      threshold: { value: num(input, 'threshold', 400), label: '告警阈值' }
-    };
-    return {
-      ratio: outcome.f1 * 0.6 + (actionRight ? 0.4 : 0),
-      result: { 告警时段: outcome.flaggedHours.map((hour) => `${hour}时`).join('、') || '无', 检测F1: outcome.f1, chart },
-      feedback: `${outcome.fp ? '阈值过低，白天正常调用被误报。' : outcome.fn ? '阈值过高，夜间异常未被发现。' : '告警阈值合理。'}${actionRight ? '' : ' 密钥疑似泄露时应立即吊销并轮换。'}`
-    };
-  },
-
-  S14: (input) => {
-    const truth = INJECTION_SAMPLES.filter((sample) => detectInjection(sample).injected);
-    const base = checklist('S14', input, 'flagged', truth);
-    return {
-      ratio: base.ratio,
-      result: {
-        ...base.result,
-        verdicts: INJECTION_SAMPLES.map((sample) => detectInjection(sample))
-      },
-      feedback: base.feedback
-    };
-  },
-
-  S15: (input) => {
-    const truth = ['拒绝并说明', '正常回答', '拒绝并说明', '转人工并提供求助渠道'];
-    const wrong = CONTENT_CASES.map((_, index) => index).filter((index) => text(input, `case${index + 1}`) !== truth[index]);
-    return {
-      ratio: (CONTENT_CASES.length - wrong.length) / CONTENT_CASES.length,
-      result: { 处置正确: `${CONTENT_CASES.length - wrong.length}/${CONTENT_CASES.length}` },
-      feedback: wrong.length ? wrong.map((index) => `“${CONTENT_CASES[index]}”应“${truth[index]}”`).join('；') : '处置策略全部正确。'
-    };
-  },
-
-  S16: (input) => {
     const levels = Object.fromEntries(AGENT_TOOLS.map((tool) => [tool, text(input, `tool_${tool}`)]));
     const attack = simulateExfiltration(levels);
     const ratio = (attack.compliantTools / AGENT_TOOLS.length) * 0.6 + (attack.blocked ? 0.4 : 0);
@@ -350,7 +409,7 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     }, critical);
   },
 
-  S17: (input) => {
+  S14: (input) => {
     const threshold = num(input, 'threshold', 0.3);
     const outcome = evaluateFairness(text(input, 'metric'), threshold);
     const thresholdOk = threshold >= 0.05 && threshold <= 0.1;
@@ -371,15 +430,15 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     };
   },
 
-  S18: (input) => {
-    const order = precedence('S18', input, 'sequence', [
+  S15: (input) => {
+    const order = precedence('S15', input, 'sequence', [
       { before: '确认任务许可与使用时段', after: '提交逻辑启动（作业调度）', why: '没有任务许可不能启动' },
       { before: '核对获批的功率与制冷预算', after: '提交逻辑启动（作业调度）', why: '有插座不等于可以满载，须先核对预算' },
       { before: '在 BMC 中只读查看电源、风扇、温度告警', after: '提交逻辑启动（作业调度）', why: '告警未解释前不启动高负载' },
       { before: '确认进风温度在设备档案范围内', after: '提交逻辑启动（作业调度）', why: '环境条件须在启动前确认' },
       { before: '提交逻辑启动（作业调度）', after: '启动后观察温度与功耗', why: '启动后需持续观察' }
     ]);
-    const roles = checklist('S18', input, 'facilityOnly', ['合上配电柜总开关', '闭合机柜 PDU 断路器', 'UPS 维护与电池更换']);
+    const roles = checklist('S15', input, 'facilityOnly', ['合上配电柜总开关', '闭合机柜 PDU 断路器', 'UPS 维护与电池更换']);
     const selected = parseList(input.facilityOnly);
     const critical = selected.includes('合上配电柜总开关') ? [] : ['把合配电柜总开关当作学生可做的操作（属于授权专业人员的设施作业）'];
     return withCritical({
@@ -389,7 +448,7 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     }, critical);
   },
 
-  S19: (input) => {
+  S16: (input) => {
     const profile = SYNTHETIC_DEVICE_PROFILE;
     const t = profile.gpuThresholds;
     const load = num(input, 'loadPct', 90);
@@ -423,8 +482,29 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
     };
   },
 
-  S20: (input) => {
-    const overheat = precedence('S20', input, 'overheat', [
+  S17: (input) => {
+    const order = precedence('S17', input, 'sequence', [
+      { before: '通知受影响的实验人员并停止相关任务', after: '按程序关闭服务器', why: '关机前先通知相关人员' },
+      { before: '按程序关闭服务器', after: '断开 A、B 两路供电输入', why: '先关机再断开供电' },
+      { before: '断开 A、B 两路供电输入', after: '在断开点挂牌上锁（每位维修人员一把锁）', why: '断开后在断开点挂牌上锁' },
+      { before: '在断开点挂牌上锁（每位维修人员一把锁）', after: '验电确认无电后开始维修', why: '挂牌上锁后验电，再开始维修' },
+      { before: '验电确认无电后开始维修', after: '维修完成后由上锁人本人解锁摘牌并恢复供电', why: '恢复供电放在最后' }
+    ]);
+    const standbyOk = text(input, 'standby') === '不可以，须确认所有供电输入已断开并验电';
+    const duties = checklist('S17', input, 'duties', ['核对两路供电都已断开并挂牌', '提醒他人不得擅自送电', '记录挂牌上锁与解除的时间']);
+    const selected = parseList(input.duties);
+    const critical: string[] = [];
+    if (selected.includes('维修人员暂时离开时代为解锁送电')) critical.push('他人代为解锁送电会使维修人员触电');
+    if (selected.includes('亲自断开 PDU 断路器')) critical.push('学生不得操作配电设备');
+    return withCritical({
+      ratio: order.ratio * 0.5 + (standbyOk ? 0.2 : 0) + duties.ratio * 0.3,
+      result: { 必要先后: order.violated.length ? `违反 ${order.violated.length} 条` : '全部满足', 待机判断: standbyOk ? '正确' : '错误', 职责: duties.result.正确率 },
+      feedback: `${order.violated.length ? `${[...new Set(order.violated.map((rule) => rule.why))].join('；')}。` : '挂牌上锁流程满足全部必要先后。'}${standbyOk ? '' : ' 待机不等于断电，双电源服务器须断开所有输入并验电。'}${duties.feedback === '全部正确。' ? '' : ` 职责：${duties.feedback}`}`
+    }, critical);
+  },
+
+  S18: (input) => {
+    const overheat = precedence('S18', input, 'overheat', [
       { before: '立即向值班运维报告', after: '在安全时间窗内保存检查点', why: '报告不应等到最后，应先报告' },
       { before: '立即向值班运维报告', after: '温度仍上升则受控关机', why: '受控关机前应已报告值班' },
       { before: '停止提交新任务并降低负载', after: '温度仍上升则受控关机', why: '先降负载，仍上升再关机' },
@@ -433,53 +513,75 @@ const HANDLERS: Record<string, (input: StepInput) => Evaluation> = {
       { before: '温度仍上升则受控关机', after: '记录事件并复盘', why: '复盘放在处置之后' }
     ]);
     const fire = text(input, 'fire');
-    const leakSelected = parseList(input.leak);
-    const leak = checklist('S20', input, 'leak', ['停止靠近漏液机柜并设置警戒', '立即通知值班运维']);
     const critical: string[] = [];
     if (fire !== '按下报警按钮并沿疏散路线撤离到集合点') critical.push(`火警时“${fire}”会延误报警与撤离`);
-    if (leakSelected.includes('自行拔下机柜电源插头')) critical.push('漏液时学生自行拔电有触电风险');
-    if (leakSelected.includes('用纸巾擦干液体后继续实验')) critical.push('漏液未处置就继续实验');
-    if (leakSelected.includes('等训练任务优雅关机后再报告')) critical.push('漏液时等待优雅关机会延误报告');
     if (overheat.seq[overheat.seq.length - 1] === '立即向值班运维报告') critical.push('无烟过温时把报告放在最后');
     return withCritical({
-      ratio: overheat.ratio * 0.5 + 0.25 + leak.ratio * 0.25,
-      result: { 无烟过温必要先后: overheat.violated.length ? `违反 ${overheat.violated.length} 条` : '全部满足', 火警: fire, 漏液: leak.result.正确率 },
-      feedback: `${overheat.violated.length ? `无烟过温：${[...new Set(overheat.violated.map((rule) => rule.why))].join('；')}。` : '无烟过温处置满足全部必要先后。'}${leak.feedback === '全部正确。' ? '' : ` 漏液：${leak.feedback}`}`
+      ratio: overheat.ratio * 0.65 + 0.35,
+      result: { 无烟过温必要先后: overheat.violated.length ? `违反 ${overheat.violated.length} 条` : '全部满足', 火警: fire },
+      feedback: overheat.violated.length ? `无烟过温：${[...new Set(overheat.violated.map((rule) => rule.why))].join('；')}。` : '无烟过温处置满足全部必要先后。'
+    }, critical);
+  },
+
+  S19: (input) => {
+    const order = precedence('S19', input, 'sequence', [
+      { before: '立即远离漏液区域并设置警戒，提醒他人不要踩踏', after: '由授权运维按设备程序隔离供电与冷却回路', why: '先远离并警戒，人员安全优先' },
+      { before: '立即报告值班运维，说明机柜编号与现象', after: '由授权运维按设备程序隔离供电与冷却回路', why: '隔离由运维执行，须先报告' },
+      { before: '立即报告值班运维，说明机柜编号与现象', after: '在值班运维指导下停止提交新任务', why: '先报告，再按指导调整任务' },
+      { before: '由授权运维按设备程序隔离供电与冷却回路', after: '记录告警时间与现象，配合复盘', why: '记录复盘放在处置之后' }
+    ]);
+    const forbidden = checklist('S19', input, 'forbidden', ['用手或纸巾擦拭机柜附近的液体', '自行拔下机柜电源插头', '站在液体中操作键盘保存模型', '打开机柜门查找漏点']);
+    const critical = order.seq[0] !== '立即远离漏液区域并设置警戒，提醒他人不要踩踏' && order.seq[0] !== '立即报告值班运维，说明机柜编号与现象'
+      ? [`漏液时第一步“${order.seq[0]}”延误了远离与报告`] : [];
+    return withCritical({
+      ratio: order.ratio * 0.5 + forbidden.ratio * 0.5,
+      result: { 必要先后: order.violated.length ? `违反 ${order.violated.length} 条` : '全部满足', 禁止行为识别: forbidden.result.正确率 },
+      feedback: `${order.violated.length ? `${[...new Set(order.violated.map((rule) => rule.why))].join('；')}。` : '处置顺序满足全部必要先后。'}${forbidden.feedback === '全部正确。' ? '' : ` 禁止行为：${forbidden.feedback}`}`
+    }, critical);
+  },
+
+  S20: (input) => {
+    const order = precedence('S20', input, 'sequence', [
+      { before: '听到声光报警立即停止操作', after: '沿疏散路线撤离防护区', why: '听到报警先停止操作' },
+      { before: '沿疏散路线撤离防护区', after: '在集合点清点人数并报告', why: '先撤离再清点' },
+      { before: '确认防护区门已关闭，不阻挡防护门', after: '在集合点清点人数并报告', why: '撤离时随手确认防护门关闭' },
+      { before: '在集合点清点人数并报告', after: '等待专业人员通风检测确认后再返回', why: '返回必须放在最后' }
+    ]);
+    const falseAlarm = text(input, 'falseAlarm');
+    const reentry = text(input, 'reentry');
+    const falseOk = falseAlarm === '由授权人员按程序使用紧急停止装置并报告';
+    const reentryOk = reentry === '专业人员完成通风与检测并确认后';
+    const critical: string[] = [];
+    if (falseAlarm === '用物品顶住防护门，方便进出查看') critical.push('顶住防护门会使灭火剂失效并让人员暴露');
+    if (falseAlarm === '自己返回防护区关闭报警器') critical.push('延时阶段返回防护区有窒息风险');
+    if (!reentryOk) critical.push(`喷放后“${reentry}”有窒息风险`);
+    return withCritical({
+      ratio: order.ratio * 0.5 + (falseOk ? 0.25 : 0) + (reentryOk ? 0.25 : 0),
+      result: { 必要先后: order.violated.length ? `违反 ${order.violated.length} 条` : '全部满足', 误报处理: falseAlarm, 再次进入: reentry },
+      feedback: order.violated.length ? `${[...new Set(order.violated.map((rule) => rule.why))].join('；')}。` : '撤离与确认顺序满足全部必要先后。'
     }, critical);
   },
 
   S21: (input) => {
-    const window = text(input, 'window');
-    const accountRight = text(input, 'account') === INCIDENT.account;
-    const windowRight = window === INCIDENT.window;
-    const perHour = eventsPerHour();
-    const chart: ChartData = {
-      title: '审计事件分布（次/小时）',
-      x: perHour.hours.map((hour) => `${hour}时`),
-      series: [
-        { name: '全部事件', values: perHour.total },
-        { name: '外部发送', values: perHour.external }
-      ]
-    };
-    return {
-      ratio: (accountRight ? 0.7 : 0) + (windowRight ? 0.3 : 0),
-      result: {
-        时间窗内事件: eventsInWindow(window).map((event) => `${event.time} ${event.account} ${event.action}`).join('；') || '无',
-        chart
-      },
-      feedback: accountRight && windowRight ? '追溯准确：svc_agent 在 02:00–04:00 外发了企业质检数据。' : '请查看“外部发送”出现的时段，并定位对应账号。'
-    };
+    const first = text(input, 'first');
+    const order = precedence('S21', input, 'sequence', [
+      { before: '按急停断电或用干燥绝缘物使其脱离电源', after: '确认脱离电源后检查意识与呼吸', why: '先使其脱离电源，再接触检查' },
+      { before: '确认脱离电源后检查意识与呼吸', after: '无呼吸时由受过培训的人员进行心肺复苏并使用 AED', why: '先判断意识与呼吸，再决定是否心肺复苏' },
+      { before: '按急停断电或用干燥绝缘物使其脱离电源', after: '拨打 120 并报告实验室负责人', why: '先断电，避免施救者与伤者持续受害' },
+      { before: '拨打 120 并报告实验室负责人', after: '保护现场并记录事件经过', why: '记录放在救治与报告之后' }
+    ]);
+    const firstOk = first === '先确保自身安全，再按急停断电或用干燥绝缘物使其脱离电源';
+    const critical = first === '立刻用手把他拉开' ? ['徒手拉触电者会使施救者同样触电'] : [];
+    return withCritical({
+      ratio: (firstOk ? 0.4 : 0) + order.ratio * 0.6,
+      result: { 第一反应: first, 必要先后: order.violated.length ? `违反 ${order.violated.length} 条` : '全部满足' },
+      feedback: `${firstOk ? '' : '第一反应应是先保证自身安全并断电。'}${order.violated.length ? `${[...new Set(order.violated.map((rule) => rule.why))].join('；')}。` : '施救与报告顺序满足全部必要先后。'}`
+    }, critical);
   },
 
-  S22: (input) => {
-    const base = checklist('S22', input, 'elements', ['事件时间线', '影响的数据类型与规模', '已采取的处置措施', '根因分析', '整改措施与责任人']);
-    const right = text(input, 'severity') === '较大';
-    return {
-      ratio: base.ratio * 0.7 + (right ? 0.3 : 0),
-      result: { ...base.result, 事件等级: text(input, 'severity') },
-      feedback: `${base.feedback}${right ? '' : ' 2000 条含个人信息记录外泄，应定为“较大”事件。'}`
-    };
-  },
+
+
+  S22: (input) => combine([[0.45, '审计追溯', auditTrace(input)], [0.55, '事件报告', reportCheck(input)]]),
 
   S23: (input) => checklist('S23', input, 'actions', [
     '启用敏感数据脱敏网关', '智能体外发工具改为人工确认', '密钥按月轮换并设调用上限', '机房增加温度联动告警'

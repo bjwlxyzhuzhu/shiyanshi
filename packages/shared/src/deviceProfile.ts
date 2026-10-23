@@ -1,6 +1,6 @@
 /**
  * 设备档案。温度判断必须绑定“设备—测点—阈值含义—来源”，不能对所有 GPU 统一使用一个温度上限。
- * 实验使用醒目标注的“合成教学档案”；真实机房档案需学校运维与厂商资料确认后填入并批准，
+ * 实验使用的设备档案数值为教学设定（不代表任何厂商的真实参数）；如需替换为本校机房真实档案，按运维与厂商资料填入，
  * 未确认的字段保持 null，不补 0、不推定安全（依据：industry-lab-safety-kit-20261023，R10、R15）。
  */
 export interface TemperatureThresholds {
@@ -33,13 +33,13 @@ export interface DeviceProfile {
   approvedAt: string | null;
 }
 
-/** 合成教学档案：数值为教学设定，不是任何厂商的真实参数 */
+/** 实验用设备档案：数值为教学设定，不是任何厂商的真实参数 */
 export const SYNTHETIC_DEVICE_PROFILE: DeviceProfile = {
   status: 'synthetic_teaching_profile',
-  label: '合成教学档案 · 非真实厂商参数',
-  deviceId: 'GPU-07（教学模拟）',
-  model: '教学模拟 GPU 服务器',
-  firmware: 'SIM-1.0',
+  label: '设备档案 · GPU-07',
+  deviceId: 'GPU-07',
+  model: 'GPU 训练服务器',
+  firmware: 'v1.0',
   coolingType: '风冷',
   inletRangeC: [18, 27],
   gpuMetric: 'GPU 核心温度',
@@ -48,7 +48,7 @@ export const SYNTHETIC_DEVICE_PROFILE: DeviceProfile = {
   electricalBudgetW: 3000,
   coolingBudgetW: 3200,
   leakSensorsSupported: true,
-  source: '教学设定（参照 NVIDIA nvidia-smi 文档中“告警/降频/关断为不同阈值”的概念，数值为合成）',
+  source: '教学设定（参照 NVIDIA nvidia-smi 文档中“告警/降频/关断为不同阈值”的概念）',
   approvedBy: null,
   approvedAt: null
 };

@@ -61,7 +61,8 @@ export type DeviceKind =
   | 'powerDesk'
   | 'coolingDesk'
   | 'auditDesk'
-  | 'reviewDesk';
+  | 'reviewDesk'
+  | 'safetyStation';
 
 export interface Hotspot {
   id: string;
@@ -89,6 +90,7 @@ export const HOTSPOTS: Hotspot[] = [
   { id: 'gpu-inspection', zone: 'gpu', name: '机房巡检台', code: 'G1', kind: 'inspection', position: [8, 4], standPoint: [8, 5.7], size: [1.5, 0.65] },
   { id: 'power-terminal', zone: 'gpu', name: '运维值守台', code: 'G2', kind: 'powerDesk', position: [3, 4], standPoint: [3, 5.7], size: [1.4, 0.65] },
   { id: 'cooling-terminal', zone: 'gpu', name: '散热监控台', code: 'G3', kind: 'coolingDesk', position: [14, 4], standPoint: [14, 5.7], size: [1.5, 0.65] },
+  { id: 'safety-station', zone: 'gpu', name: '应急安全站', code: 'G4', kind: 'safetyStation', position: [16.5, 4], standPoint: [16.5, 5.7], size: [1.2, 0.6] },
   { id: 'audit-terminal', zone: 'review', name: '日志审计终端', code: 'R1', kind: 'auditDesk', position: [23, 4], standPoint: [23, 5.7], size: [1.5, 0.65] },
   { id: 'review-terminal', zone: 'review', name: '复盘与报告终端', code: 'R2', kind: 'reviewDesk', position: [30, 4], standPoint: [30, 5.7], size: [1.6, 0.7] }
 ];
@@ -99,20 +101,20 @@ export const STEP_HOTSPOT: Record<string, string> = {
   S04: 'gpu-inspection',
   S05: 'data-terminal', S06: 'data-terminal', S07: 'data-terminal', S08: 'data-terminal', S09: 'data-terminal',
   S10: 'incident-terminal',
-  S11: 'model-terminal', S12: 'model-terminal', S13: 'model-terminal',
-  S14: 'sandbox-terminal', S15: 'sandbox-terminal', S16: 'agent-terminal', S17: 'model-terminal',
-  S18: 'power-terminal', S19: 'cooling-terminal', S20: 'power-terminal',
-  S21: 'audit-terminal', S22: 'review-terminal', S23: 'review-terminal', S24: 'review-terminal'
+  S11: 'model-terminal', S12: 'sandbox-terminal', S13: 'agent-terminal', S14: 'model-terminal',
+  S15: 'power-terminal', S16: 'cooling-terminal', S17: 'power-terminal', S18: 'power-terminal',
+  S19: 'cooling-terminal', S20: 'safety-station', S21: 'safety-station',
+  S22: 'audit-terminal', S23: 'review-terminal', S24: 'review-terminal'
 };
 
 /** 当前任务简短目标（step-world-map.json objective），题干仍以 steps.ts 为准 */
 export const STEP_OBJECTIVE: Record<string, string> = {
   S01: '核验准入材料', S02: '判断实验风险', S03: '准备应急预案', S04: '巡检 GPU 机房',
-  S05: '完成数据分级', S06: '配置个人信息脱敏', S07: '核查数据授权', S08: '检测训练数据投毒',
-  S09: '演练实验结束后的残留清理', S10: '演练数据泄露应急', S11: '核查模型许可', S12: '配置密钥最小权限',
-  S13: '检测密钥泄露', S14: '识别提示注入', S15: '处置越狱与有害请求', S16: '配置智能体工具授权',
-  S17: '评估模型公平性', S18: '执行 GPU 上电流程', S19: '控制散热与过温', S20: '演练过温断电应急',
-  S21: '追溯审计日志', S22: '撰写安全事件报告', S23: '选择整改措施', S24: '生成实验报告'
+  S05: '完成数据分级', S06: '配置个人信息脱敏', S07: '核查数据授权与模型许可', S08: '检测训练数据投毒',
+  S09: '演练实验结束后的残留清理', S10: '演练数据泄露应急', S11: '配置密钥并检测泄露', S12: '识别提示注入与有害请求',
+  S13: '配置智能体工具授权', S14: '评估模型公平性', S15: '核验训练任务启动条件', S16: '控制散热与过温',
+  S17: '核验维修前挂牌上锁', S18: '处置过温与火警', S19: '处置液冷漏液', S20: '气体灭火区域撤离',
+  S21: '人员触电应急', S22: '追溯审计日志并撰写报告', S23: '选择整改措施', S24: '生成实验报告'
 };
 
 /** 第三层提示：解释控件与操作方法，不给出答案 */
@@ -123,22 +125,22 @@ export const STEP_OPERATION_HINT: Record<string, string> = {
   S04: '逐项勾选你判断为合格的巡检项，并录入你观察到的机房环境温度。',
   S05: '为七个数据字段分别选择分类分级。',
   S06: '为四类个人信息选择处理策略；右侧预览来自后端，可边调边看。',
-  S07: '对照授权材料，勾选缺失的要件，再给出能否使用的结论。',
+  S07: '先核对数据授权材料并给出能否使用的结论，再核对模型许可证与使用范围。',
   S08: '选择检测方法并调节阈值，观察后端返回的检测曲线后再提交。',
   S09: '本步是实验结束后的清理预演，不会删除任何真实文件；选择要清理的位置与方式。',
   S10: '用上下按钮调整六项处置的先后顺序；可另请安全助手评审，评审不计分。',
-  S11: '核对许可证与使用范围，选择对应条件和结论。',
-  S12: '配置密钥的权限范围、有效期与每日额度，均为课程仿真字段。',
-  S13: '调节调用量告警阈值，结合后端调用曲线选择处置方式。',
-  S14: '逐条阅读八条输入，勾选你判断为提示注入的条目。',
-  S15: '为四条请求分别选择处置策略。',
-  S16: '为五项工具分别设置权限，提交后系统按你的配置模拟一次诱导外发攻击。',
-  S17: '选择公平性指标与阈值，观察后端分组图表后给出结论。',
-  S18: '用上下按钮排列六项上电操作的顺序。',
-  S19: '调节负载、风扇转速与进风温度，温度曲线由后端教学热路模型计算。',
-  S20: '阅读过温演练情景，用上下按钮排列六项处置顺序。',
-  S21: '选择要检索的时间窗与账号，观察后端审计图表。',
-  S22: '选择事件等级，并勾选报告应包含的要素。',
+  S11: '先配置密钥的权限、有效期与每日额度，再调节调用量告警阈值，结合后端调用曲线选择处置方式。',
+  S12: '逐条阅读八条输入，勾选你判断为提示注入的条目；再为四条请求分别选择处置策略。',
+  S13: '为六项工具分别设置权限，提交后系统按你的配置模拟一次诱导外发攻击。',
+  S14: '选择公平性指标与阈值，观察后端分组图表后给出结论。',
+  S15: '用上下按钮排列启动前核验与启动顺序，并勾选只能由授权专业人员执行的操作。',
+  S16: '调节负载、风扇转速与进风温度，温度曲线由后端教学热路模型计算。',
+  S17: '用上下按钮排列挂牌上锁流程，判断待机能否维修，并勾选学生安全员的职责。',
+  S18: '分别处理无烟过温（排序）与火警（选择）两个情景。',
+  S19: '用上下按钮排列漏液现场处置顺序，并勾选现场禁止的行为。',
+  S20: '用上下按钮排列撤离与确认步骤，再判断误报处理方式与何时可以进入。',
+  S21: '先选择第一反应，再用上下按钮排列施救与报告顺序。',
+  S22: '选择时间窗与账号并观察审计图表，再选择事件等级并勾选报告要素。',
   S23: '勾选整改措施；可另请安全助手评审，评审不计分。',
   S24: '先提交本步记录得分，再单独生成实验报告与能力画像。'
 };

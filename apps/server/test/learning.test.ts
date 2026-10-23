@@ -70,7 +70,7 @@ describe('带宽测试服务', () => {
 describe('AI 实验导师', () => {
   it('未配置模型：知识库规则作答并如实标注，不计 AI 调用', async () => {
     const { token, sessionId } = await launch(h.base, 'tutor_kb');
-    const res = await api(h.base, token).post('/api/ai/tutor', { phase: 'pre', stepId: 'S19', sessionId });
+    const res = await api(h.base, token).post('/api/ai/tutor', { phase: 'pre', stepId: 'S16', sessionId });
     expect(res.json.source).toBe('knowledge_base');
     expect(res.json.knowledgePoints.map((p: { course: string }) => p.course)).toEqual(expect.arrayContaining(['数学建模', '实验室安全']));
     expect(buildAiData(sessionId, 'response_received').aiData.ai_call_count).toBe(0);
@@ -92,7 +92,7 @@ describe('AI 实验导师', () => {
     configure({ aiModel: { model: 'm', version: 'v2026', deployment: '私有化部署', provider: '' } });
     setModelFetch(async () => new Response(JSON.stringify({ choices: [{ message: { content: '先复习热路模型。联系 13812345678' } }], usage: { prompt_tokens: 50, completion_tokens: 20 } }), { status: 200 }));
     const { token, sessionId } = await launch(h.base, 'tutor_model');
-    const res = await api(h.base, token).post('/api/ai/tutor', { phase: 'pre', stepId: 'S19', sessionId });
+    const res = await api(h.base, token).post('/api/ai/tutor', { phase: 'pre', stepId: 'S16', sessionId });
     expect(res.json.source).toBe('model');
     expect(res.json.text).not.toContain('13812345678');
     const ai = buildAiData(sessionId, 'response_received');

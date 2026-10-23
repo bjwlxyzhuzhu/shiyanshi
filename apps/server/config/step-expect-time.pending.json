@@ -35,7 +35,7 @@
     },
     {
       "stepId": "S07",
-      "title": "数据集授权与来源核查",
+      "title": "数据授权与模型许可核查",
       "expectTimeSec": null
     },
     {
@@ -55,62 +55,62 @@
     },
     {
       "stepId": "S11",
-      "title": "模型许可与合规核查",
+      "title": "密钥最小权限与泄露检测",
       "expectTimeSec": null
     },
     {
       "stepId": "S12",
-      "title": "API 密钥最小权限配置",
+      "title": "提示注入识别与有害内容处置",
       "expectTimeSec": null
     },
     {
       "stepId": "S13",
-      "title": "密钥泄露检测与轮换",
-      "expectTimeSec": null
-    },
-    {
-      "stepId": "S14",
-      "title": "提示注入识别",
-      "expectTimeSec": null
-    },
-    {
-      "stepId": "S15",
-      "title": "越狱与有害内容处置",
-      "expectTimeSec": null
-    },
-    {
-      "stepId": "S16",
       "title": "智能体工具授权与越权拦截",
       "expectTimeSec": null
     },
     {
-      "stepId": "S17",
+      "stepId": "S14",
       "title": "偏见与公平性评估",
       "expectTimeSec": null
     },
     {
-      "stepId": "S18",
-      "title": "GPU 服务器上电流程",
+      "stepId": "S15",
+      "title": "GPU 计算任务启动前核验",
       "expectTimeSec": null
     },
     {
-      "stepId": "S19",
+      "stepId": "S16",
       "title": "散热与过温监控",
       "expectTimeSec": null
     },
     {
+      "stepId": "S17",
+      "title": "维修前挂牌上锁核验",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S18",
+      "title": "过温与火警分情景处置",
+      "expectTimeSec": null
+    },
+    {
+      "stepId": "S19",
+      "title": "液冷漏液现场处置",
+      "expectTimeSec": null
+    },
+    {
       "stepId": "S20",
-      "title": "过温断电应急处置",
+      "title": "气体灭火区域撤离与确认",
       "expectTimeSec": null
     },
     {
       "stepId": "S21",
-      "title": "日志审计与追溯",
+      "title": "人员触电应急处置",
       "expectTimeSec": null
     },
     {
       "stepId": "S22",
-      "title": "安全事件报告撰写",
+      "title": "事件追溯与报告",
       "expectTimeSec": null
     },
     {

@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { Router } from 'express';
-import { BANK_VERSION, STEPS, type Role } from '@zhian/shared';
+import { BANK_VERSION, STEPS, defaultTerm, termLabel, type Role, type Term } from '@zhian/shared';
 import { PRESETS, SettingsError, publicModelSettings, saveModelSettings } from '../ai/modelSettings.js';
 import { authRequired, roleRequired, type AuthedRequest } from '../auth.js';
 import { db, hashPassword, nowIso } from '../db.js';
@@ -105,29 +105,31 @@ export function parseTable(text: string): string[][] {
   return rows;
 }
 
-function parseRole(value: string): Exclude<Role, 'admin'> | null {
-  const v = value.trim().toLowerCase();
-  if (['学生', 'student', 's'].includes(v)) return 'student';
-  if (['教师', '老师', 'teacher', 't'].includes(v)) return 'teacher';
-  return null;
-}
-
 function cleanCell(value: string | undefined, max: number): string {
   return String(value ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
 }
+
+type ImportKind = 'student' | 'teacher';
 
 interface ImportRowResult {
   line: number;
   username: string;
   name: string;
-  role: string;
-  className: string;
-  major: string;
+  /** 学生：班级、专业；教师：职称、院系 */
+  col3: string;
+  col4: string;
   status: 'create' | 'update' | 'skip' | 'error';
   message: string;
 }
 
+/** 导入学生或教师（分开导入，角色由导入类型决定，不能导入管理员） */
 adminRouter.post('/users/import', adminOnly, (req: AuthedRequest, res) => {
+  const kind: ImportKind | null = req.body?.kind === 'student' || req.body?.kind === 'teacher' ? req.body.kind : null;
+  if (!kind) {
+    res.status(400).json({ code: 'BAD_KIND', message: '请指定导入学生还是教师' });
+    return;
+  }
+  const label = kind === 'student' ? '学号' : '工号';
   const text = String(req.body?.text ?? '');
   const dryRun = req.body?.dryRun !== false;
   const updateExisting = req.body?.updateExisting === true;
@@ -149,25 +151,22 @@ adminRouter.post('/users/import', adminOnly, (req: AuthedRequest, res) => {
       line: index + 1,
       username: cleanCell(cells[0], 32),
       name: cleanCell(cells[1], 32),
-      role: cleanCell(cells[2], 10),
-      className: cleanCell(cells[3], 40),
-      major: cleanCell(cells[4], 40),
+      col3: cleanCell(cells[2], 40),
+      col4: cleanCell(cells[3], 40),
       status: 'create',
       message: ''
     };
-    const role = parseRole(result.role);
-    if (!ACCOUNT_RE.test(result.username)) return { ...result, status: 'error', message: '账号须为 3–32 位字母、数字或 _ . -' };
+    if (!ACCOUNT_RE.test(result.username)) return { ...result, status: 'error', message: `${label}须为 3–32 位字母、数字或 _ . -` };
     if (!result.name) return { ...result, status: 'error', message: '缺少姓名' };
-    if (!role) return { ...result, status: 'error', message: '角色只能是“学生”或“教师”（管理员不能批量导入）' };
-    result.role = role;
+    if (kind === 'student' && !result.col3) return { ...result, status: 'error', message: '缺少班级（学生通过班级关联到课程）' };
     const key = result.username.toLowerCase();
-    if (seen.has(key)) return { ...result, status: 'error', message: '文件内账号重复' };
+    if (seen.has(key)) return { ...result, status: 'error', message: `文件内${label}重复` };
     seen.add(key);
     const existing = findUser.get(result.username) as { id: number; role: Role; external: number } | undefined;
     if (existing) {
-      if (existing.external || existing.role !== role) return { ...result, status: 'skip', message: '账号已存在且角色或来源不同，未改动' };
+      if (existing.external || existing.role !== kind) return { ...result, status: 'skip', message: '账号已存在且角色或来源不同，未改动' };
       return updateExisting
-        ? { ...result, status: 'update', message: '已存在：更新姓名、班级、专业（不改密码）' }
+        ? { ...result, status: 'update', message: kind === 'student' ? '已存在：更新姓名、班级、专业（不改密码）' : '已存在：更新姓名、职称、院系（不改密码）' }
         : { ...result, status: 'skip', message: '账号已存在，已跳过' };
     }
     return result;
@@ -180,25 +179,26 @@ adminRouter.post('/users/import', adminOnly, (req: AuthedRequest, res) => {
     error: rows.filter((row) => row.status === 'error').length
   };
   if (dryRun) {
-    res.json({ dryRun: true, summary, rows });
+    res.json({ dryRun: true, kind, summary, rows });
     return;
   }
 
   const credentials: Array<{ username: string; name: string; role: string; password: string }> = [];
-  const insert = db.prepare(`
-    INSERT INTO users (username, password_hash, role, points, created_at, display_name, class_name, major, must_change_password)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-  `);
-  const update = db.prepare('UPDATE users SET display_name = ?, class_name = ?, major = ? WHERE username = ?');
+  const insert = kind === 'student'
+    ? db.prepare(`INSERT INTO users (username, password_hash, role, points, created_at, display_name, class_name, major, must_change_password) VALUES (?, ?, 'student', 100, ?, ?, ?, ?, 1)`)
+    : db.prepare(`INSERT INTO users (username, password_hash, role, points, created_at, display_name, title, department, must_change_password) VALUES (?, ?, 'teacher', 0, ?, ?, ?, ?, 1)`);
+  const update = kind === 'student'
+    ? db.prepare('UPDATE users SET display_name = ?, class_name = ?, major = ? WHERE username = ?')
+    : db.prepare('UPDATE users SET display_name = ?, title = ?, department = ? WHERE username = ?');
   db.exec('BEGIN');
   try {
     for (const row of rows) {
       if (row.status === 'create') {
         const password = generateInitialPassword();
-        insert.run(row.username, hashPassword(password), row.role, row.role === 'student' ? 100 : 0, nowIso(), row.name, row.className || null, row.major || null);
-        credentials.push({ username: row.username, name: row.name, role: row.role, password });
+        insert.run(row.username, hashPassword(password), nowIso(), row.name, row.col3 || null, row.col4 || null);
+        credentials.push({ username: row.username, name: row.name, role: kind, password });
       } else if (row.status === 'update') {
-        update.run(row.name, row.className || null, row.major || null, row.username);
+        update.run(row.name, row.col3 || null, row.col4 || null, row.username);
       }
     }
     db.exec('COMMIT');
@@ -207,8 +207,8 @@ adminRouter.post('/users/import', adminOnly, (req: AuthedRequest, res) => {
     throw error;
   }
   // 审计只记数量，不记姓名与密码
-  audit(req.user!.id, 'users.import', null, summary);
-  res.json({ dryRun: false, summary, rows, credentials });
+  audit(req.user!.id, `users.import.${kind}`, null, summary);
+  res.json({ dryRun: false, kind, summary, rows, credentials });
 });
 
 // ---------------- 账号管理 ----------------
@@ -219,9 +219,9 @@ adminRouter.get('/users', adminOnly, (req, res) => {
   const where: string[] = [];
   const params: string[] = [];
   if (['student', 'teacher', 'admin'].includes(role)) { where.push('role = ?'); params.push(role); }
-  if (q) { where.push('(username LIKE ? OR display_name LIKE ? OR class_name LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where.push('(username LIKE ? OR display_name LIKE ? OR class_name LIKE ? OR department LIKE ?)'); params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`); }
   const users = db.prepare(`
-    SELECT id, username, display_name AS name, role, class_name AS className, major, disabled, must_change_password AS mustChangePassword, external, last_login_at AS lastLoginAt, created_at AS createdAt
+    SELECT id, username, display_name AS name, role, class_name AS className, major, title, department, disabled, must_change_password AS mustChangePassword, external, last_login_at AS lastLoginAt, created_at AS createdAt
     FROM users ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY role, class_name, username LIMIT 1000
   `).all(...params);
   res.json({ users });
@@ -267,8 +267,26 @@ adminRouter.post('/users/:id/status', adminOnly, (req: AuthedRequest, res) => {
 
 // ---------------- 成绩查看（教师、管理员） ----------------
 
-adminRouter.get('/results', roleRequired('teacher', 'admin'), (req, res) => {
+/** 教师能看到的教学班：所授课程关联的班级；管理员不受限（返回 null） */
+function visibleClasses(user: { id: number; role: Role }, courseId: number | null): string[] | null {
+  if (user.role === 'admin' && courseId === null) return null;
+  const rows = courseId === null
+    ? db.prepare('SELECT DISTINCT cc.class_name AS c FROM course_classes cc JOIN course_teachers ct ON ct.course_id = cc.course_id WHERE ct.user_id = ?').all(user.id)
+    : user.role === 'admin'
+      ? db.prepare('SELECT class_name AS c FROM course_classes WHERE course_id = ?').all(courseId)
+      : db.prepare('SELECT cc.class_name AS c FROM course_classes cc JOIN course_teachers ct ON ct.course_id = cc.course_id WHERE ct.user_id = ? AND cc.course_id = ?').all(user.id, courseId);
+  return (rows as Array<{ c: string }>).map((row) => row.c);
+}
+
+adminRouter.get('/results', roleRequired('teacher', 'admin'), (req: AuthedRequest, res) => {
   const className = String(req.query.className ?? '').trim();
+  const courseId = Number(req.query.courseId) > 0 ? Number(req.query.courseId) : null;
+  const allowed = visibleClasses(req.user!, courseId);
+  const classFilter = className ? (allowed === null || allowed.includes(className) ? [className] : []) : allowed;
+  if (classFilter !== null && classFilter.length === 0) {
+    res.json({ bankVersion: BANK_VERSION, totalSteps: STEPS.length, classes: allowed ?? [], results: [] });
+    return;
+  }
   const rows = db.prepare(`
     SELECT s.id AS sessionId, u.username, COALESCE(u.display_name, u.username) AS name, u.class_name AS className, u.major,
            s.source, s.started_at AS startedAt, s.finished_at AS finishedAt, s.total_score AS totalScore,
@@ -277,18 +295,19 @@ adminRouter.get('/results', roleRequired('teacher', 'admin'), (req, res) => {
            (SELECT MAX(p.correct) FROM prelab_attempts p WHERE p.user_id = u.id) AS prelabBest,
            tr.grade AS teacherGrade, tr.comment AS teacherComment
     FROM sessions s JOIN users u ON u.id = s.user_id LEFT JOIN teacher_reviews tr ON tr.session_id = s.id
-    WHERE u.role = 'student' ${className ? 'AND u.class_name = ?' : ''}
+    WHERE u.role = 'student' ${classFilter === null ? '' : `AND u.class_name IN (${classFilter.map(() => '?').join(', ')})`}
     ORDER BY u.class_name, u.username, s.id DESC LIMIT 5000
-  `).all(...(className ? [BANK_VERSION, className] : [BANK_VERSION]));
-  const classes = (db.prepare("SELECT DISTINCT class_name AS c FROM users WHERE role = 'student' AND class_name IS NOT NULL ORDER BY c").all() as Array<{ c: string }>).map((row) => row.c);
+  `).all(BANK_VERSION, ...(classFilter ?? []));
+  const classes = allowed ?? (db.prepare("SELECT DISTINCT class_name AS c FROM users WHERE role = 'student' AND class_name IS NOT NULL ORDER BY c").all() as Array<{ c: string }>).map((row) => row.c);
   res.json({ bankVersion: BANK_VERSION, totalSteps: STEPS.length, classes, results: rows });
 });
 
 /** 教师评价（成绩类型“教师评价报告”）：等级 + 评语，按会话保存，可修改 */
 adminRouter.put('/results/:sessionId/review', roleRequired('teacher', 'admin'), (req: AuthedRequest, res) => {
   const sessionId = Number(req.params.sessionId);
-  const exists = db.prepare("SELECT s.id FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND u.role = 'student'").get(sessionId);
-  if (!exists) {
+  const exists = db.prepare("SELECT s.id, u.class_name AS className FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND u.role = 'student'").get(sessionId) as { id: number; className: string | null } | undefined;
+  const allowed = exists ? visibleClasses(req.user!, null) : null;
+  if (!exists || (allowed !== null && !allowed.includes(exists.className ?? ''))) {
     res.status(404).json({ code: 'NO_SESSION', message: '实验会话不存在' });
     return;
   }
@@ -341,4 +360,182 @@ adminRouter.get('/ai-audit', adminOnly, (_req, res) => {
       flagged: gap !== null && gap > 10
     }
   });
+});
+
+// ---------------- 学期与课程 ----------------
+
+const TERM_KEY = 'current_term';
+
+export function currentTerm(): Term {
+  const row = db.prepare('SELECT value_json FROM app_settings WHERE key = ?').get(TERM_KEY) as { value_json: string } | undefined;
+  if (row) {
+    try {
+      const term = JSON.parse(row.value_json) as Term;
+      if (Number.isInteger(term.startYear) && (term.termNo === 1 || term.termNo === 2)) return term;
+    } catch {
+      // 配置损坏时回退到按日期推算
+    }
+  }
+  return defaultTerm();
+}
+
+function parseTerm(body: Record<string, unknown> | undefined): Term | null {
+  const startYear = Number(body?.startYear);
+  const termNo = Number(body?.termNo);
+  if (!Number.isInteger(startYear) || startYear < 2000 || startYear > 2100 || (termNo !== 1 && termNo !== 2)) return null;
+  return { startYear, termNo };
+}
+
+adminRouter.get('/term', roleRequired('teacher', 'admin'), (_req, res) => {
+  const term = currentTerm();
+  res.json({ term, label: termLabel(term) });
+});
+
+adminRouter.put('/term', adminOnly, (req: AuthedRequest, res) => {
+  const term = parseTerm(req.body);
+  if (!term) {
+    res.status(400).json({ code: 'BAD_TERM', message: '学期格式不正确：起始年份 2000–2100，第一或第二学期' });
+    return;
+  }
+  db.prepare(`
+    INSERT INTO app_settings (key, value_json, updated_by, updated_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+  `).run(TERM_KEY, JSON.stringify(term), req.user!.id, nowIso());
+  audit(req.user!.id, 'term.update', termLabel(term));
+  res.json({ term, label: termLabel(term) });
+});
+
+interface CourseRow {
+  id: number;
+  code: string;
+  name: string;
+  category: string;
+  termStartYear: number;
+  termNo: 1 | 2;
+  totalHours: number | null;
+  credits: number | null;
+}
+
+function courseView(row: CourseRow) {
+  const teachers = db.prepare(`SELECT u.id, u.username, COALESCE(u.display_name, u.username) AS name FROM course_teachers ct JOIN users u ON u.id = ct.user_id WHERE ct.course_id = ? ORDER BY u.username`).all(row.id);
+  const classes = (db.prepare('SELECT class_name AS c FROM course_classes WHERE course_id = ? ORDER BY class_name').all(row.id) as Array<{ c: string }>).map((item) => item.c);
+  const students = classes.length
+    ? Number((db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'student' AND class_name IN (${classes.map(() => '?').join(', ')})`).get(...classes) as { n: number }).n)
+    : 0;
+  return { ...row, termLabel: termLabel({ startYear: row.termStartYear, termNo: row.termNo }), teachers, classes, students };
+}
+
+const COURSE_COLUMNS = 'id, code, name, category, term_start_year AS termStartYear, term_no AS termNo, total_hours AS totalHours, credits';
+
+/** 课程列表：管理员看全部，教师只看自己任课的课程；默认当前学期 */
+adminRouter.get('/courses', roleRequired('teacher', 'admin'), (req: AuthedRequest, res) => {
+  const term = parseTerm({ startYear: req.query.startYear, termNo: req.query.termNo }) ?? currentTerm();
+  const rows = (req.user!.role === 'admin'
+    ? db.prepare(`SELECT ${COURSE_COLUMNS} FROM courses WHERE term_start_year = ? AND term_no = ? ORDER BY name, code`).all(term.startYear, term.termNo)
+    : db.prepare(`SELECT ${COURSE_COLUMNS.split(', ').map((col) => `c.${col}`).join(', ')} FROM courses c JOIN course_teachers ct ON ct.course_id = c.id WHERE ct.user_id = ? AND c.term_start_year = ? AND c.term_no = ? ORDER BY c.name, c.code`).all(req.user!.id, term.startYear, term.termNo)) as unknown as CourseRow[];
+  res.json({ term, label: termLabel(term), courses: rows.map(courseView) });
+});
+
+function parseCourse(body: Record<string, unknown> | undefined): { course: Omit<CourseRow, 'id'>; teacherIds: number[]; classes: string[] } | { error: string; field: string } {
+  const code = cleanCell(String(body?.code ?? ''), 40);
+  const name = cleanCell(String(body?.name ?? ''), 60);
+  const term = parseTerm({ startYear: body?.termStartYear, termNo: body?.termNo });
+  if (!code) return { error: '请填写课程序号', field: 'code' };
+  if (!name) return { error: '请填写课程名称', field: 'name' };
+  if (!term) return { error: '请选择学期', field: 'term' };
+  const hours = body?.totalHours === '' || body?.totalHours === null || body?.totalHours === undefined ? null : Number(body.totalHours);
+  const credits = body?.credits === '' || body?.credits === null || body?.credits === undefined ? null : Number(body.credits);
+  if (hours !== null && (!Number.isInteger(hours) || hours < 0 || hours > 1000)) return { error: '总课时应为 0–1000 的整数', field: 'totalHours' };
+  if (credits !== null && (!Number.isFinite(credits) || credits < 0 || credits > 30)) return { error: '学分应在 0–30 之间', field: 'credits' };
+  const teacherIds = [...new Set((Array.isArray(body?.teacherIds) ? body!.teacherIds : []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!teacherIds.length) return { error: '请至少选择一位任课教师', field: 'teacherIds' };
+  const valid = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'teacher' AND id IN (${teacherIds.map(() => '?').join(', ')})`).get(...teacherIds) as { n: number };
+  if (Number(valid.n) !== teacherIds.length) return { error: '任课教师须为已导入的教师账号', field: 'teacherIds' };
+  const classes = [...new Set((Array.isArray(body?.classes) ? body!.classes : String(body?.classes ?? '').split(/[,，、\n]/))
+    .map((item) => cleanCell(String(item), 40)).filter(Boolean))];
+  if (!classes.length) return { error: '请至少填写一个教学班', field: 'classes' };
+  return {
+    course: { code, name, category: cleanCell(String(body?.category ?? ''), 30), termStartYear: term.startYear, termNo: term.termNo, totalHours: hours, credits },
+    teacherIds,
+    classes
+  };
+}
+
+function saveLinks(courseId: number, teacherIds: number[], classes: string[]): void {
+  db.prepare('DELETE FROM course_teachers WHERE course_id = ?').run(courseId);
+  db.prepare('DELETE FROM course_classes WHERE course_id = ?').run(courseId);
+  const addTeacher = db.prepare('INSERT INTO course_teachers (course_id, user_id) VALUES (?, ?)');
+  const addClass = db.prepare('INSERT INTO course_classes (course_id, class_name) VALUES (?, ?)');
+  for (const id of teacherIds) addTeacher.run(courseId, id);
+  for (const name of classes) addClass.run(courseId, name);
+}
+
+adminRouter.post('/courses', adminOnly, (req: AuthedRequest, res) => {
+  const parsed = parseCourse(req.body);
+  if ('error' in parsed) {
+    res.status(400).json({ code: 'BAD_COURSE', field: parsed.field, message: parsed.error });
+    return;
+  }
+  const { course, teacherIds, classes } = parsed;
+  const duplicate = db.prepare('SELECT id FROM courses WHERE code = ? AND term_start_year = ? AND term_no = ?').get(course.code, course.termStartYear, course.termNo);
+  if (duplicate) {
+    res.status(409).json({ code: 'DUPLICATE', field: 'code', message: '该学期已有相同课程序号' });
+    return;
+  }
+  db.exec('BEGIN');
+  try {
+    const id = Number(db.prepare('INSERT INTO courses (code, name, category, term_start_year, term_no, total_hours, credits, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(course.code, course.name, course.category, course.termStartYear, course.termNo, course.totalHours, course.credits, nowIso()).lastInsertRowid);
+    saveLinks(id, teacherIds, classes);
+    db.exec('COMMIT');
+    audit(req.user!.id, 'courses.create', String(id));
+    res.json({ course: courseView({ id, ...course }) });
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+});
+
+adminRouter.put('/courses/:id', adminOnly, (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  if (!db.prepare('SELECT id FROM courses WHERE id = ?').get(id)) {
+    res.status(404).json({ code: 'NO_COURSE', message: '课程不存在' });
+    return;
+  }
+  const parsed = parseCourse(req.body);
+  if ('error' in parsed) {
+    res.status(400).json({ code: 'BAD_COURSE', field: parsed.field, message: parsed.error });
+    return;
+  }
+  const { course, teacherIds, classes } = parsed;
+  const duplicate = db.prepare('SELECT id FROM courses WHERE code = ? AND term_start_year = ? AND term_no = ? AND id <> ?').get(course.code, course.termStartYear, course.termNo, id);
+  if (duplicate) {
+    res.status(409).json({ code: 'DUPLICATE', field: 'code', message: '该学期已有相同课程序号' });
+    return;
+  }
+  db.exec('BEGIN');
+  try {
+    db.prepare('UPDATE courses SET code = ?, name = ?, category = ?, term_start_year = ?, term_no = ?, total_hours = ?, credits = ? WHERE id = ?')
+      .run(course.code, course.name, course.category, course.termStartYear, course.termNo, course.totalHours, course.credits, id);
+    saveLinks(id, teacherIds, classes);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+  audit(req.user!.id, 'courses.update', String(id));
+  res.json({ course: courseView({ id, ...course }) });
+});
+
+adminRouter.delete('/courses/:id', adminOnly, (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  db.prepare('DELETE FROM course_teachers WHERE course_id = ?').run(id);
+  db.prepare('DELETE FROM course_classes WHERE course_id = ?').run(id);
+  const info = db.prepare('DELETE FROM courses WHERE id = ?').run(id);
+  if (!info.changes) {
+    res.status(404).json({ code: 'NO_COURSE', message: '课程不存在' });
+    return;
+  }
+  audit(req.user!.id, 'courses.delete', String(id));
+  res.json({ ok: true });
 });

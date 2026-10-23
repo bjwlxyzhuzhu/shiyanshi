@@ -20,7 +20,7 @@ type Input = Record<string, number | string>;
 const SESSION_KEY = 'zhian.session';
 
 /** 支持实时预览的步骤：只取后端 chart / preview，不含分数 */
-export const PREVIEW_STEPS = new Set(['S06', 'S08', 'S13', 'S17', 'S19', 'S21']);
+export const PREVIEW_STEPS = new Set(['S06', 'S08', 'S11', 'S14', 'S16', 'S22']);
 
 let starting: Promise<void> | null = null;
 const previewTimers = new Map<string, number>();

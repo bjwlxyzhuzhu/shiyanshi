@@ -675,6 +675,20 @@ function HotspotDevice({ hotspot, rot, scene, quality, reduceMotion }: { hotspot
       break;
     }
     case 'auditDesk': body = <DeskTerminal w={w} d={d} status={status} screens={[{ style: 'audit', x: -0.32, width: 0.56 }, { style: 'audit', x: 0.32, width: 0.56, seed: 3 }]} />; break;
+    case 'safetyStation': body = (
+      // 应急安全站：气体灭火控制盘（红）、AED 箱（绿）、急救箱与疏散图
+      <group>
+        <B p={[0, 0.9, 0]} s={[w, 1.8, d]} m={m.deskBody} cast />
+        <B p={[0, 1.79, d / 2 + 0.006]} s={[w * 0.9, 0.03, 0.01]} m={statusMaterial(status)} />
+        <B p={[-0.3, 1.32, d / 2 + 0.012]} s={[0.42, 0.52, 0.02]} m={m.fireRed} />
+        <Label p={[-0.3, 1.32, d / 2 + 0.024]} size={[0.36, 0.1]} text="气体灭火控制" background="#b8322c" color="#ffffff" />
+        <B p={[0.3, 1.22, d / 2 + 0.012]} s={[0.34, 0.4, 0.02]} m={m.green} />
+        <Label p={[0.3, 1.22, d / 2 + 0.024]} size={[0.28, 0.1]} text="AED" background="#1f7a52" color="#ffffff" />
+        <B p={[0.3, 0.72, d / 2 + 0.012]} s={[0.34, 0.26, 0.02]} m={m.screenFrame} />
+        <Label p={[0.3, 0.72, d / 2 + 0.024]} size={[0.28, 0.08]} text="急救箱" />
+        <Label p={[-0.3, 0.78, d / 2 + 0.014]} size={[0.42, 0.3]} text="疏散路线图" />
+      </group>
+    ); break;
     case 'reviewDesk': body = <DeskTerminal w={w} d={d} status={status} screens={[{ style: 'review', x: -0.34, width: 0.58 }, { style: 'briefing', x: 0.34, width: 0.58, seed: 2 }]} extras={<Binders p={[-0.72, 0.925, 0.12]} />} />; break;
   }
   // 沙箱与权限台含随结果变化的动态部件，不合批；其余终端按状态版本合批

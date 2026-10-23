@@ -112,7 +112,7 @@ describe('AI 调用审计', () => {
     const { token, sessionId } = await launch(h.base, 'ai_report');
     const client = api(h.base, token);
     await client.post('/api/ai/report', { sessionId });
-    await client.post('/api/experiment/preview/S19', { input: { loadPct: 90, fanPct: 30, ambientC: 26 } });
+    await client.post('/api/experiment/preview/S16', { input: { loadPct: 90, fanPct: 30, ambientC: 26 } });
     const count = db.prepare('SELECT COUNT(*) AS c FROM ai_invocations WHERE session_id = ?').get(sessionId) as { c: number };
     expect(count.c).toBe(0);
   });

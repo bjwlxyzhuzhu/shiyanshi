@@ -1,7 +1,7 @@
 import type { StepDefinition } from './types.js';
 
 /** 题库版本：评分规则或选项有实质变化时更新。旧版本记录只读展示，不与新版本混合比较。 */
-export const BANK_VERSION = 'v3-manufacturing-20261023';
+export const BANK_VERSION = 'v4-physical-20261023';
 
 export const PII_LEVELS = ['一般数据', '个人信息', '敏感个人信息'];
 export const DATA_COLUMNS = ['工号', '姓名', '手机号', '身份证号', '班组', '缺陷检测结果', '职业健康体检结论'];
@@ -68,7 +68,7 @@ export const STEPS: StepDefinition[] = [
   {
     id: 'S04', seq: 4, stage: '准入', name: '机房设备与环境检查', type: 'scene', scene: 'labRoom', maxScore: 4,
     description: '进入 GPU 机房，以学生身份完成上机前的只读巡检，并按设备档案判断进风温度。',
-    material: '学生巡检只看不动：发现异常停下并报告值班运维，不打开配电柜、不拆机箱。机房消防的学生目标是识别火情、报警与疏散，不自行灭火。当前机柜进风测点读数为 29.5 °C；设备档案见“设备档案”说明（合成教学档案，非真实厂商参数）。',
+    material: '学生巡检只看不动：发现异常停下并报告值班运维，不打开配电柜、不拆机箱。机房消防的学生目标是识别火情、报警与疏散，不自行灭火。当前机柜进风测点读数为 29.5 °C；设备档案见下方“设备档案”说明。',
     fields: [
       {
         key: 'checks', label: '巡检项（勾选你应当执行的）', kind: 'checklist',
@@ -101,16 +101,19 @@ export const STEPS: StepDefinition[] = [
     ]
   },
   {
-    id: 'S07', seq: 7, stage: '数据安全', name: '数据集授权与来源核查', type: 'form', maxScore: 4,
-    description: '核查数据来源与授权范围，判断能否用于模型训练。',
-    material: '数据由合作企业从 MES 质检系统与人事系统导出；员工告知书写明用途为“产线质量分析”，未提及模型训练；已签署校企数据使用协议并通过学院数据使用审批；未约定保存期限。',
+    id: 'S07', seq: 7, stage: '数据安全', name: '数据授权与模型许可核查', type: 'form', maxScore: 5,
+    description: '核查训练数据的来源与授权范围，以及所用开源模型的许可证，判断能否用于本次训练。',
+    material: '数据由合作企业从 MES 质检系统与人事系统导出；员工告知书写明用途为“产线质量分析”，未提及模型训练；已签署校企数据使用协议并通过学院数据使用审批；未约定保存期限。所选开源 7B 模型的许可证为“研究许可（禁止商用）”，本实验用于课程教学，不对外提供服务。',
     fields: [
       {
         key: 'missing', label: '尚缺少的授权要件', kind: 'checklist',
         options: ['已取得知情同意', '同意范围覆盖模型训练', '已通过数据使用审批', '已约定数据保存期限'],
         default: ''
       },
-      { key: 'conclusion', label: '结论', kind: 'select', options: ['可直接用于训练', '补充授权后可用', '不得使用'], default: '可直接用于训练' }
+      { key: 'conclusion', label: '数据能否用于训练', kind: 'select', options: ['可直接用于训练', '补充授权后可用', '不得使用'], default: '可直接用于训练' },
+      { key: 'license', label: '模型许可', kind: 'select', options: ['Apache-2.0', '研究许可（禁止商用）', '未声明许可'], default: 'Apache-2.0' },
+      { key: 'usage', label: '模型使用范围', kind: 'select', options: ['课程实验', '对外商业服务'], default: '对外商业服务' },
+      { key: 'licenseConclusion', label: '模型许可合规结论', kind: 'select', options: ['合规', '不合规', '需进一步确认'], default: '需进一步确认' }
     ]
   },
   {
@@ -149,59 +152,39 @@ export const STEPS: StepDefinition[] = [
     ]
   },
   {
-    id: 'S11', seq: 11, stage: '模型与智能体', name: '模型许可与合规核查', type: 'form', maxScore: 4,
-    description: '核查所用开源模型的许可证与使用范围。',
-    material: '所选开源 7B 模型的许可证为“研究许可（禁止商用）”；本实验用于课程教学，不对外提供服务。',
+    id: 'S11', seq: 11, stage: '模型与智能体', name: '密钥最小权限与泄露检测', type: 'chart', maxScore: 5,
+    description: '按最小权限原则配置模型平台 API 密钥，再分析 24 小时调用日志，设定告警阈值并决定处置动作。',
     fields: [
-      { key: 'license', label: '模型许可', kind: 'select', options: ['Apache-2.0', '研究许可（禁止商用）', '未声明许可'], default: 'Apache-2.0' },
-      { key: 'usage', label: '使用范围', kind: 'select', options: ['课程实验', '对外商业服务'], default: '对外商业服务' },
-      { key: 'conclusion', label: '合规结论', kind: 'select', options: ['合规', '不合规', '需进一步确认'], default: '需进一步确认' }
-    ]
-  },
-  {
-    id: 'S12', seq: 12, stage: '模型与智能体', name: 'API 密钥最小权限配置', type: 'form', maxScore: 4,
-    description: '为训练与推理申请模型平台 API 密钥，按最小权限原则配置。',
-    fields: [
+      { key: 'threshold', label: '告警阈值（次/小时）', kind: 'number', min: 10, max: 1000, step: 10, default: 400 },
+      { key: 'action', label: '处置动作', kind: 'select', options: ['继续观察', '仅修改账号密码', '立即吊销并轮换密钥'], default: '继续观察' },
       {
-        key: 'scopes', label: '授予的权限', kind: 'checklist',
+        key: 'scopes', label: '密钥授予的权限', kind: 'checklist',
         options: ['模型推理', '模型微调', '账单管理', '成员管理', '删除项目'],
         default: ''
       },
-      { key: 'ttlDays', label: '有效期', kind: 'number', unit: '天', min: 1, max: 365, default: 365 },
+      { key: 'ttlDays', label: '密钥有效期', kind: 'number', unit: '天', min: 1, max: 365, default: 365 },
       { key: 'quota', label: '每日调用上限', kind: 'number', unit: '次', min: 0, max: 100000, default: 100000 }
     ]
   },
   {
-    id: 'S13', seq: 13, stage: '模型与智能体', name: '密钥泄露检测与轮换', type: 'chart', maxScore: 4,
-    description: '分析 24 小时调用日志，设定告警阈值并决定处置动作。',
+    id: 'S12', seq: 12, stage: '模型与智能体', name: '提示注入识别与有害内容处置', type: 'scene', scene: 'sandbox', maxScore: 6,
+    description: '在隔离沙箱中检查 8 条输入，勾选属于提示注入的条目；再为四类用户请求选择处置策略。',
     fields: [
-      { key: 'threshold', label: '告警阈值（次/小时）', kind: 'number', min: 10, max: 1000, step: 10, default: 400 },
-      { key: 'action', label: '处置动作', kind: 'select', options: ['继续观察', '仅修改账号密码', '立即吊销并轮换密钥'], default: '继续观察' }
+      { key: 'flagged', label: '判定为提示注入的输入', kind: 'checklist', options: INJECTION_SAMPLES, default: '' },
+      ...CONTENT_CASES.map((text, index) => ({
+        key: `case${index + 1}`, label: `请求 ${index + 1}：${text}`, kind: 'select' as const, options: CONTENT_POLICIES, default: '正常回答'
+      }))
     ]
   },
   {
-    id: 'S14', seq: 14, stage: '模型与智能体', name: '提示注入识别', type: 'scene', scene: 'sandbox', maxScore: 5,
-    description: '在隔离沙箱中检查 8 条输入，勾选属于提示注入的条目。',
-    fields: [
-      { key: 'flagged', label: '判定为提示注入的输入', kind: 'checklist', options: INJECTION_SAMPLES, default: '' }
-    ]
-  },
-  {
-    id: 'S15', seq: 15, stage: '模型与智能体', name: '越狱与有害内容处置', type: 'scene', scene: 'sandbox', maxScore: 5,
-    description: '为四类用户请求选择正确的处置策略。',
-    fields: CONTENT_CASES.map((text, index) => ({
-      key: `case${index + 1}`, label: text, kind: 'select' as const, options: CONTENT_POLICIES, default: '正常回答'
-    }))
-  },
-  {
-    id: 'S16', seq: 16, stage: '模型与智能体', name: '智能体工具授权与越权拦截', type: 'scene', scene: 'agentConsole', maxScore: 5,
+    id: 'S13', seq: 13, stage: '模型与智能体', name: '智能体工具授权与越权拦截', type: 'scene', scene: 'agentConsole', maxScore: 5,
     description: '为智能体的每个工具设置权限，然后观察一次“诱导外发数据”的攻击能否被拦截。',
     fields: AGENT_TOOLS.map((tool) => ({
       key: `tool_${tool}`, label: tool, kind: 'select' as const, options: TOOL_LEVELS, default: '自动允许'
     }))
   },
   {
-    id: 'S17', seq: 17, stage: '模型与智能体', name: '偏见与公平性评估', type: 'chart', maxScore: 4,
+    id: 'S14', seq: 14, stage: '模型与智能体', name: '偏见与公平性评估', type: 'chart', maxScore: 4,
     description: '评估微调模型在“城镇 / 农村”两组学生上的预测差异。',
     material: '人口统计均等差 = 两组预测为正的比例之差；机会均等差 = 两组真正例率之差。常用可接受阈值为 0.05–0.1。',
     fields: [
@@ -211,7 +194,7 @@ export const STEPS: StepDefinition[] = [
     ]
   },
   {
-    id: 'S18', seq: 18, stage: '设施与运维', name: 'GPU 计算任务启动前核验', type: 'scene', scene: 'labRoom', maxScore: 4,
+    id: 'S15', seq: 15, stage: '设施与运维', name: 'GPU 计算任务启动前核验', type: 'scene', scene: 'labRoom', maxScore: 4,
     description: '以学生身份完成训练任务启动前的核验与逻辑启动，并区分哪些设施操作只能由授权专业人员执行。',
     material: '学生通过作业调度系统“逻辑启动”训练任务；配电送电、PDU 断路器与 UPS 维护属于设施作业，由有资质的专业人员按设备程序执行。BMC 告警未解释前不启动高负载。',
     fields: [
@@ -228,7 +211,7 @@ export const STEPS: StepDefinition[] = [
     ]
   },
   {
-    id: 'S19', seq: 19, stage: '设施与运维', name: '散热与过温监控', type: 'chart', maxScore: 4,
+    id: 'S16', seq: 16, stage: '设施与运维', name: '散热与过温监控', type: 'chart', maxScore: 4,
     description: '按设备档案选择正确的温度测点，调节风扇转速与进风温度，在满足任务负载要求的同时让温度保持在告警阈值以下。',
     material: '训练任务要求负载不低于 85%。温度阈值只适用于档案中注明的测点；档案未提供的读数应视为未知，不能套用其他测点的阈值。安全超限时，负载再高也不能弥补。',
     fields: [
@@ -239,35 +222,86 @@ export const STEPS: StepDefinition[] = [
     ]
   },
   {
-    id: 'S20', seq: 20, stage: '设施与运维', name: '机房应急分情景处置', type: 'scene', scene: 'labRoom', maxScore: 5,
-    description: '无烟过温、火警、漏液是三种不同的应急情景，分别作出处置决定；人身安全优先，危险场景不能为保存数据延误撤离。',
-    material: '情景一：空调故障导致 GPU 温度持续上升，已确认无烟、无火、无漏液，人员安全。情景二：机房烟感报警并可见烟雾。情景三：液冷机柜漏液传感器报警，地面有液体。',
+    id: 'S17', seq: 17, stage: '设施与运维', name: '维修前挂牌上锁核验', type: 'scene', scene: 'labRoom', maxScore: 3,
+    description: '服务器维修前的能量隔离：排列挂牌上锁流程，并明确学生安全员在其中的职责边界。',
+    material: 'GPU-07 风扇故障需要更换，由持证运维人员维修。该服务器为双电源输入（电源模块 1 接 A 路 PDU、电源模块 2 接 B 路 PDU），待机时主板仍带电。你作为实验室学生安全员协助核验，不亲自操作配电设备。',
+    fields: [
+      {
+        key: 'sequence', label: '挂牌上锁流程（用 ↑ ↓ 调整）', kind: 'order',
+        options: ['在断开点挂牌上锁（每位维修人员一把锁）', '通知受影响的实验人员并停止相关任务', '验电确认无电后开始维修', '按程序关闭服务器', '维修完成后由上锁人本人解锁摘牌并恢复供电', '断开 A、B 两路供电输入'],
+        default: ''
+      },
+      { key: 'standby', label: '服务器已待机、指示灯熄灭，能否直接开始维修？', kind: 'select', options: ['可以，待机就等于断电', '不可以，须确认所有供电输入已断开并验电'], default: '可以，待机就等于断电' },
+      {
+        key: 'duties', label: '学生安全员应做的事（可多选）', kind: 'checklist',
+        options: ['核对两路供电都已断开并挂牌', '提醒他人不得擅自送电', '亲自断开 PDU 断路器', '维修人员暂时离开时代为解锁送电', '记录挂牌上锁与解除的时间'],
+        default: ''
+      }
+    ]
+  },
+  {
+    id: 'S18', seq: 18, stage: '设施与运维', name: '过温与火警分情景处置', type: 'scene', scene: 'labRoom', maxScore: 5,
+    description: '无烟过温与火警是两种不同的应急情景，分别作出处置决定；人身安全优先，危险场景不能为保存数据延误撤离。',
+    material: '情景一：空调故障导致 GPU 温度持续上升，已确认无烟、无火、无漏液，人员安全。情景二：机房烟感报警并可见烟雾。',
     fields: [
       {
         key: 'overheat', label: '情景一 无烟过温：处置顺序（用 ↑ ↓ 调整）', kind: 'order',
         options: ['在安全时间窗内保存检查点', '检查风扇与空调告警', '记录事件并复盘', '停止提交新任务并降低负载', '温度仍上升则受控关机', '立即向值班运维报告'],
         default: ''
       },
-      { key: 'fire', label: '情景二 火警：你的第一反应', kind: 'select', options: ['先保存训练检查点再撤离', '按下报警按钮并沿疏散路线撤离到集合点', '取灭火器自行扑救', '返回工位取个人物品后撤离'], default: '先保存训练检查点再撤离' },
+      { key: 'fire', label: '情景二 火警：你的第一反应', kind: 'select', options: ['先保存训练检查点再撤离', '按下报警按钮并沿疏散路线撤离到集合点', '取灭火器自行扑救', '返回工位取个人物品后撤离'], default: '先保存训练检查点再撤离' }
+    ]
+  },
+  {
+    id: 'S19', seq: 19, stage: '设施与运维', name: '液冷漏液现场处置', type: 'scene', scene: 'labRoom', maxScore: 3,
+    description: '液冷机柜漏液报警：排列现场处置顺序，并识别哪些行为在漏液现场被禁止。',
+    material: '液冷机柜 GPU-03 的漏液传感器报警，地面可见液体，机柜仍在运行；监控系统已显示该机柜漏液告警，自动隔离动作是否配置未知。',
+    fields: [
       {
-        key: 'leak', label: '情景三 漏液：应采取的行动（可多选）', kind: 'checklist',
-        options: ['停止靠近漏液机柜并设置警戒', '立即通知值班运维', '自行拔下机柜电源插头', '用纸巾擦干液体后继续实验', '等训练任务优雅关机后再报告'],
+        key: 'sequence', label: '现场处置顺序（用 ↑ ↓ 调整）', kind: 'order',
+        options: ['记录告警时间与现象，配合复盘', '由授权运维按设备程序隔离供电与冷却回路', '立即远离漏液区域并设置警戒，提醒他人不要踩踏', '在值班运维指导下停止提交新任务', '立即报告值班运维，说明机柜编号与现象'],
+        default: ''
+      },
+      {
+        key: 'forbidden', label: '漏液现场禁止的行为（可多选）', kind: 'checklist',
+        options: ['用手或纸巾擦拭机柜附近的液体', '自行拔下机柜电源插头', '站在液体中操作键盘保存模型', '在警戒线外向运维提供告警信息', '打开机柜门查找漏点'],
         default: ''
       }
     ]
   },
   {
-    id: 'S21', seq: 21, stage: '设施与运维', name: '日志审计与追溯', type: 'chart', maxScore: 4,
-    description: '查看审计日志，找出导出企业质检数据的账号与时间窗口。',
+    id: 'S20', seq: 20, stage: '设施与运维', name: '气体灭火区域撤离与确认', type: 'scene', scene: 'labRoom', maxScore: 3,
+    description: '机房气体灭火系统进入延时阶段：排列撤离与确认步骤，并判断误报处理与喷放后能否进入。',
+    material: '机房为气体灭火防护区。火灾报警确认后系统进入延时阶段，声光报警启动，防护区内人员须在延时结束前撤离；喷放后防护区内氧气浓度降低，未经通风与检测不得进入。',
     fields: [
-      { key: 'window', label: '审计时间窗', kind: 'select', options: ['00:00–02:00', '02:00–04:00', '08:00–10:00', '14:00–16:00'], default: '08:00–10:00' },
-      { key: 'account', label: '可疑账号', kind: 'select', options: ['student_a', 'student_b', 'svc_agent', 'admin'], default: 'student_a' }
+      {
+        key: 'sequence', label: '撤离与确认顺序（用 ↑ ↓ 调整）', kind: 'order',
+        options: ['在集合点清点人数并报告', '听到声光报警立即停止操作', '等待专业人员通风检测确认后再返回', '沿疏散路线撤离防护区', '确认防护区门已关闭，不阻挡防护门'],
+        default: ''
+      },
+      { key: 'falseAlarm', label: '若确认是误报，应如何处理？', kind: 'select', options: ['自己返回防护区关闭报警器', '由授权人员按程序使用紧急停止装置并报告', '用物品顶住防护门，方便进出查看'], default: '自己返回防护区关闭报警器' },
+      { key: 'reentry', label: '喷放结束后何时可以进入防护区？', kind: 'select', options: ['烟雾散去即可进入', '专业人员完成通风与检测并确认后', '戴上口罩即可进入'], default: '烟雾散去即可进入' }
     ]
   },
   {
-    id: 'S22', seq: 22, stage: '复盘', name: '安全事件报告撰写', type: 'form', maxScore: 3,
-    description: '确定事件等级，并勾选报告必须包含的要素。',
+    id: 'S21', seq: 21, stage: '设施与运维', name: '人员触电应急处置', type: 'scene', scene: 'labRoom', maxScore: 3,
+    description: '同学在机房触电：判断第一反应，并排列施救与报告顺序。',
+    material: '一名同学在机房插拔外设时触电，身体仍与带电设备接触，意识模糊。附近有配电箱的急停按钮和干燥的木质拖把杆。',
     fields: [
+      { key: 'first', label: '看到同学触电，你的第一反应', kind: 'select', options: ['立刻用手把他拉开', '先确保自身安全，再按急停断电或用干燥绝缘物使其脱离电源', '先离开去找老师再回来'], default: '立刻用手把他拉开' },
+      {
+        key: 'sequence', label: '施救与报告顺序（用 ↑ ↓ 调整）', kind: 'order',
+        options: ['拨打 120 并报告实验室负责人', '保护现场并记录事件经过', '确认脱离电源后检查意识与呼吸', '按急停断电或用干燥绝缘物使其脱离电源', '无呼吸时由受过培训的人员进行心肺复苏并使用 AED'],
+        default: ''
+      }
+    ]
+  },
+  {
+    id: 'S22', seq: 22, stage: '复盘', name: '事件追溯与报告', type: 'chart', maxScore: 5,
+    description: '查看审计日志，找出导出企业质检数据的账号与时间窗口；再确定事件等级，并勾选报告必须包含的要素。',
+    fields: [
+      { key: 'window', label: '审计时间窗', kind: 'select', options: ['00:00–02:00', '02:00–04:00', '08:00–10:00', '14:00–16:00'], default: '08:00–10:00' },
+      { key: 'account', label: '可疑账号', kind: 'select', options: ['student_a', 'student_b', 'svc_agent', 'admin'], default: 'student_a' },
       { key: 'severity', label: '事件等级', kind: 'select', options: ['一般', '较大', '重大'], default: '一般' },
       {
         key: 'elements', label: '报告要素', kind: 'checklist',

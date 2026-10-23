@@ -3,7 +3,7 @@ import { ABILITY_LEVELS, COURSES, KNOWLEDGE_POINTS, PROJECT_INFO, TEAM, buildCou
 import { api, type ArchiveItem, type ProcessSummary, type TutorAnswer, type PrelabSummary } from '../api';
 import { useSessionStore, useStepInput } from '../stores/session';
 
-const DURING_STEPS = new Set(['S06', 'S08', 'S13', 'S17', 'S19', 'S21']);
+const DURING_STEPS = new Set(['S06', 'S08', 'S11', 'S14', 'S16', 'S22']);
 
 /** 本步涉及的课程与知识点（多课程融合） */
 export function KnowledgeBlock({ step }: { step: StepDefinition }) {

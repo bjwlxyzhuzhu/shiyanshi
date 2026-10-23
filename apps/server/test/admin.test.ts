@@ -101,30 +101,30 @@ describe('管理员配置真实大模型（密钥只写不读）', () => {
 
 describe('管理员导入师生名单', () => {
   const sheet = [
-    '账号,姓名,角色,班级,专业',
-    '2026010101,合成学生甲,学生,机械2601,机械设计制造及其自动化',
-    '2026010102,"合成学生乙",student,材控2601,材料成型及控制工程',
-    'T2026001,合成教师,教师,,',
-    'x,太短,学生,,',
-    '2026010101,重复行,学生,,',
-    'boss01,越权,管理员,,'
+    '学号,姓名,班级,专业',
+    '2026010101,合成学生甲,机械2601,机械设计制造及其自动化',
+    '2026010102,"合成学生乙",材控2601,材料成型及控制工程',
+    'x,太短,机械2601,',
+    '2026010101,重复行,机械2601,',
+    '2026010103,缺班级,,'
   ].join('\n');
 
   it('解析 CSV / 制表符 / 中文逗号', () => {
     expect(parseTable('a，b，"c,d"\n1\t2\t3')).toEqual([['a', 'b', 'c,d'], ['1', '2', '3']]);
   });
 
-  it('预览不写库，逐行给出问题；管理员角色不能批量导入', async () => {
-    const res = await api(h.base, adminToken).post('/api/admin/users/import', { text: sheet, dryRun: true });
-    expect(res.json.summary).toEqual({ create: 3, update: 0, skip: 0, error: 3 });
-    expect(res.json.rows.find((row: { username: string }) => row.username === 'boss01').message).toContain('管理员');
+  it('学生与教师分开导入：必须指定类型；预览不写库，逐行给出问题', async () => {
+    expect((await api(h.base, adminToken).post('/api/admin/users/import', { text: sheet, dryRun: true })).json.code).toBe('BAD_KIND');
+    const res = await api(h.base, adminToken).post('/api/admin/users/import', { kind: 'student', text: sheet, dryRun: true });
+    expect(res.json.summary).toEqual({ create: 2, update: 0, skip: 0, error: 3 });
+    expect(res.json.rows.find((row: { username: string }) => row.username === '2026010103').message).toContain('班级');
     expect(res.json.credentials).toBeUndefined();
     expect(db.prepare("SELECT COUNT(*) AS c FROM users WHERE username = '2026010101'").get()).toEqual({ c: 0 });
   });
 
   it('确认导入后一次性返回初始密码；首次登录必须改密，改密后可做实验', async () => {
-    const res = await api(h.base, adminToken).post('/api/admin/users/import', { text: sheet, dryRun: false });
-    expect(res.json.credentials).toHaveLength(3);
+    const res = await api(h.base, adminToken).post('/api/admin/users/import', { kind: 'student', text: sheet, dryRun: false });
+    expect(res.json.credentials).toHaveLength(2);
     const student = res.json.credentials.find((c: { username: string }) => c.username === '2026010101');
     expect(student.password).toMatch(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9]{12}$/);
     const stored = db.prepare("SELECT password_hash, display_name, class_name, major, must_change_password FROM users WHERE username = '2026010101'").get() as Record<string, unknown>;
@@ -155,7 +155,7 @@ describe('管理员导入师生名单', () => {
 
   it('再次导入：已存在账号默认跳过；勾选更新时只改姓名班级专业，不改密码', async () => {
     const before = db.prepare("SELECT password_hash FROM users WHERE username = '2026010102'").get() as { password_hash: string };
-    const res = await api(h.base, adminToken).post('/api/admin/users/import', { text: '2026010102,合成学生乙,学生,材控2602,材料成型及控制工程', dryRun: false, updateExisting: true });
+    const res = await api(h.base, adminToken).post('/api/admin/users/import', { kind: 'student', text: '2026010102,合成学生乙,材控2602,材料成型及控制工程', dryRun: false, updateExisting: true });
     expect(res.json.summary.update).toBe(1);
     expect(res.json.credentials).toHaveLength(0);
     const after = db.prepare("SELECT password_hash, class_name FROM users WHERE username = '2026010102'").get() as { password_hash: string; class_name: string };
@@ -163,7 +163,7 @@ describe('管理员导入师生名单', () => {
   });
 
   it('停用账号：不能登录，已有登录立即失效；重置密码后须再次改密', async () => {
-    const created = await api(h.base, adminToken).post('/api/admin/users/import', { text: '2026010199,合成学生丙,学生,机械2601,机械设计制造及其自动化', dryRun: false });
+    const created = await api(h.base, adminToken).post('/api/admin/users/import', { kind: 'student', text: '2026010199,合成学生丙,机械2601,机械设计制造及其自动化', dryRun: false });
     const cred = created.json.credentials[0];
     const session = await login(cred.username, cred.password);
     const id = session.json.user.id;
@@ -179,10 +179,45 @@ describe('管理员导入师生名单', () => {
   it('学生不能访问后台；教师可查看成绩但不能导入', async () => {
     const student = await login('2026010101', 'MyNewSecret2026');
     expect((await api(h.base, student.json.token).get('/api/admin/results')).status).toBe(403);
-    expect((await api(h.base, teacherToken).post('/api/admin/users/import', { text: 'a01,x,学生' })).status).toBe(403);
+    expect((await api(h.base, teacherToken).post('/api/admin/users/import', { kind: 'student', text: 'a01,x,班1' })).status).toBe(403);
+    // 未关联课程的教师看不到任何学生
+    expect((await api(h.base, teacherToken).get('/api/admin/results')).json.results).toEqual([]);
+    const teacherId = (db.prepare("SELECT id FROM users WHERE username = 't_teacher'").get() as { id: number }).id;
+    const course = await api(h.base, adminToken).post('/api/admin/courses', { code: '25224902.03', name: '实验室安全', category: '学科基础选修课', termStartYear: 2026, termNo: 1, totalHours: 16, credits: 1, teacherIds: [teacherId], classes: '机械2601' });
+    expect(course.json.course).toMatchObject({ students: 2, termLabel: '2026—2027 学年第一学期' });
+    expect((await api(h.base, teacherToken).get('/api/admin/results?className=材控2601')).json.results).toEqual([]);
     const results = await api(h.base, teacherToken).get('/api/admin/results?className=机械2601');
     expect(results.status).toBe(200);
     expect(results.json.results[0]).toMatchObject({ username: '2026010101', className: '机械2601', stepsDone: 1, legacySteps: 0 });
+  });
+});
+
+describe('教师导入、学期与课程关联', () => {
+  it('教师单独导入，保存职称与院系', async () => {
+    const res = await api(h.base, adminToken).post('/api/admin/users/import', { kind: 'teacher', text: '工号,姓名,职称,院系\nT2026001,合成教师乙,副教授,计算机学院', dryRun: false });
+    expect(res.json.credentials).toHaveLength(1);
+    expect(db.prepare("SELECT role, title, department FROM users WHERE username = 'T2026001'").get()).toEqual({ role: 'teacher', title: '副教授', department: '计算机学院' });
+  });
+
+  it('学期按“某学年第一/第二学期”设置；课程序号在同一学期内唯一；任课教师须为教师账号', async () => {
+    expect((await put(adminToken, '/api/admin/term', { startYear: 2026, termNo: 3 })).status).toBe(400);
+    expect((await put(adminToken, '/api/admin/term', { startYear: 2026, termNo: 2 })).json.label).toBe('2026—2027 学年第二学期');
+    const studentId = (db.prepare("SELECT id FROM users WHERE username = '2026010101'").get() as { id: number }).id;
+    const otherTeacherId = (db.prepare("SELECT id FROM users WHERE username = 'T2026001'").get() as { id: number }).id;
+    const badTeacher = await api(h.base, adminToken).post('/api/admin/courses', { code: 'X1', name: '课', termStartYear: 2026, termNo: 2, teacherIds: [studentId], classes: '班1' });
+    expect(badTeacher.json.field).toBe('teacherIds');
+    const dup = await api(h.base, adminToken).post('/api/admin/courses', { code: '25224902.03', name: '实验室安全', termStartYear: 2026, termNo: 1, teacherIds: [otherTeacherId], classes: ['班1'] });
+    expect(dup.status).toBe(409);
+    const own = await api(h.base, adminToken).post('/api/admin/courses', { code: '1996101215.01', name: '前沿技术与学科发展讲座', termStartYear: 2026, termNo: 1, teacherIds: [otherTeacherId], classes: '班1，班2' });
+    expect(own.json.course.classes).toEqual(['班1', '班2']);
+  });
+
+  it('教师只看到自己任课的课程；管理员看到本学期全部课程', async () => {
+    const mine = await api(h.base, teacherToken).get('/api/admin/courses?startYear=2026&termNo=1');
+    expect(mine.json.courses.map((c: { name: string }) => c.name)).toEqual(['实验室安全']);
+    const all = await api(h.base, adminToken).get('/api/admin/courses?startYear=2026&termNo=1');
+    expect(all.json.courses).toHaveLength(2);
+    expect(all.json.label).toBe('2026—2027 学年第一学期');
   });
 });
 

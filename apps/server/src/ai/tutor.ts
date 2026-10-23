@@ -19,7 +19,7 @@ export interface TutorResponse {
 }
 
 /** 这些步骤的预览会产生可分析的仿真数据 */
-export const DURING_STEPS = new Set(['S06', 'S08', 'S13', 'S17', 'S19', 'S21']);
+export const DURING_STEPS = new Set(['S06', 'S08', 'S11', 'S14', 'S16', 'S22']);
 
 const COURSE_NAME: Record<string, string> = { AI: '人工智能概论', DIP: '数字图像处理', NET: '计算机网络', MATH: '数学建模', SAFE: '实验室安全' };
 

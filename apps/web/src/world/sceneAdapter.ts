@@ -24,7 +24,7 @@ export interface SceneState {
   unlockedZones: Set<ZoneId>;
   currentHotspotId: string | null;
   currentZone: ZoneId | null;
-  sandbox: { step: 'S14' | 'S15'; slots: SlotState[]; verified: boolean };
+  sandbox: { step: 'S12'; slots: SlotState[]; verified: boolean };
   agent: { levels: string[]; trace: TraceHop[] | null; dirty: boolean };
   cooling: { fanPct: number; peakC: number | null; limitC: number | null; stale: boolean; active: boolean };
   power: { drill: boolean; s18Recorded: boolean; s20Recorded: boolean };
@@ -86,14 +86,13 @@ export function useSceneState(): SceneState {
       return dirty ? null : result;
     };
 
-    // 沙箱：正在操作或当前任务是 S15 时显示 S15，否则 S14
-    const sandboxStep: 'S14' | 'S15' =
-      (focusHotspotId === 'sandbox-terminal' && viewStepId === 'S15') || (focusHotspotId !== 'sandbox-terminal' && current === 'S15') ? 'S15' : 'S14';
+    // 沙箱显示 S12 的八条输入判定
+    const sandboxStep = 'S12' as const;
     let slots: SlotState[];
     let verified = false;
-    if (sandboxStep === 'S14') {
-      const flagged = new Set(parseList(input('S14').flagged));
-      const verdicts = freshResult('S14')?.result.verdicts as Array<{ text: string; injected: boolean }> | undefined;
+    {
+      const flagged = new Set(parseList(input('S12').flagged));
+      const verdicts = freshResult('S12')?.result.verdicts as Array<{ text: string; injected: boolean }> | undefined;
       verified = Boolean(verdicts);
       slots = INJECTION_SAMPLES.map((text) => {
         const selected = flagged.has(text);
@@ -101,36 +100,31 @@ export function useSceneState(): SceneState {
         if (verdict) return verdict.injected === selected ? 'correct' : 'wrong';
         return selected ? 'selected' : 'neutral';
       });
-    } else {
-      slots = CONTENT_CASES.map((_, index) => {
-        const value = String(input('S15')[`case${index + 1}`] ?? '正常回答');
-        return value === '正常回答' ? 'neutral' : 'selected';
-      });
     }
 
-    const agentInput = input('S16');
-    const agentResult = freshResult('S16');
+    const agentInput = input('S13');
+    const agentResult = freshResult('S13');
     const agent = {
       levels: AGENT_TOOLS.map((tool) => String(agentInput[`tool_${tool}`] ?? '自动允许')),
       trace: (agentResult?.result.trace as TraceHop[] | undefined) ?? null,
-      dirty: Boolean(results.S16) && !agentResult
+      dirty: Boolean(results.S13) && !agentResult
     };
 
-    const coolingPreview = previews.S19;
-    const previewFresh = coolingPreview && coolingPreview.forHash === inputHash(input('S19')) && coolingPreview.status === 'ok';
-    const coolingChart = previewFresh ? coolingPreview.chart : (freshResult('S19')?.result.chart as ChartData | undefined) ?? null;
+    const coolingPreview = previews.S16;
+    const previewFresh = coolingPreview && coolingPreview.forHash === inputHash(input('S16')) && coolingPreview.status === 'ok';
+    const coolingChart = previewFresh ? coolingPreview.chart : (freshResult('S16')?.result.chart as ChartData | undefined) ?? null;
     const cooling = {
-      fanPct: Number(input('S19').fanPct ?? 30),
+      fanPct: Number(input('S16').fanPct ?? 30),
       peakC: chartPeak(coolingChart),
       limitC: coolingChart?.threshold?.value ?? null,
       stale: Boolean(coolingPreview && !previewFresh),
-      active: current === 'S19' || (focusHotspotId === 'cooling-terminal')
+      active: current === 'S16' || (focusHotspotId === 'cooling-terminal')
     };
 
     const power = {
-      drill: (current === 'S20' || (focusHotspotId === 'power-terminal' && viewStepId === 'S20')) && !results.S20,
-      s18Recorded: done.has('S18'),
-      s20Recorded: done.has('S20')
+      drill: (current === 'S18' || (focusHotspotId === 'power-terminal' && viewStepId === 'S18')) && !results.S18,
+      s18Recorded: done.has('S15'),
+      s20Recorded: done.has('S18')
     };
 
     const s04 = freshResult('S04');

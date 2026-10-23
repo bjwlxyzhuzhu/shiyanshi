@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BRAND, IMPORT_TEMPLATE } from '@zhian/shared';
-import { api, type AdminUser, type AiAuditData, type ImportResult, type ModelPreset, type ModelSettings, type ModelTestResult, type ResultRow } from '../api';
+import { BRAND, STUDENT_IMPORT_TEMPLATE, TEACHER_IMPORT_TEMPLATE, defaultTerm, termLabel, type Term } from '@zhian/shared';
+import { api, type AdminUser, type AiAuditData, type CourseInput, type CourseItem, type ImportResult, type ModelPreset, type ModelSettings, type ModelTestResult, type ResultRow } from '../api';
 import { useSessionStore } from '../stores/session';
 import { ChangePassword } from './ChangePassword';
 
@@ -192,7 +192,13 @@ function ModelTab() {
 
 // ---------------- 师生导入 ----------------
 
-function ImportTab() {
+const IMPORT_KIND = {
+  student: { label: '学生', id: '学号', col3: '班级', col4: '专业', template: STUDENT_IMPORT_TEMPLATE, note: '列顺序：学号、姓名、班级、专业。班级须与“学期与课程”中填写的教学班名称一致，学生据此关联到课程。' },
+  teacher: { label: '教师', id: '工号', col3: '职称', col4: '院系', template: TEACHER_IMPORT_TEMPLATE, note: '列顺序：工号、姓名、职称、院系。导入后在“学期与课程”中为课程选择任课教师。' }
+} as const;
+
+function ImportTab({ kind }: { kind: 'student' | 'teacher' }) {
+  const meta = IMPORT_KIND[kind];
   const [text, setText] = useState('');
   const [updateExisting, setUpdateExisting] = useState(false);
   const [preview, setPreview] = useState<ImportResult | null>(null);
@@ -204,7 +210,7 @@ function ImportTab() {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.admin.importUsers(text, dryRun, updateExisting);
+      const result = await api.admin.importUsers(kind, text, dryRun, updateExisting);
       if (dryRun) setPreview(result);
       else {
         setDone(result);
@@ -232,17 +238,17 @@ function ImportTab() {
   return (
     <div className="admin-section">
       <p className="muted">
-        列顺序：账号（学号 / 工号）、姓名、角色（学生 / 教师）、班级、专业。可从 Excel 复制粘贴，或上传“CSV UTF-8”文件。管理员账号不能批量导入。
+        {meta.note}可从 Excel 复制粘贴，或上传“CSV UTF-8”文件。
       </p>
       <div className="admin-actions">
-        <button type="button" className="ghost small" onClick={() => downloadCsv('师生导入模板.csv', IMPORT_TEMPLATE.split('\n').map((line) => line.split(',')))}>下载模板</button>
+        <button type="button" className="ghost small" onClick={() => downloadCsv(`${meta.label}导入模板.csv`, meta.template.split('\n').map((line) => line.split(',')))}>下载模板</button>
         <label className="ghost small file-button">
           选择 CSV 文件
           <input type="file" accept=".csv,.txt,text/csv,text/plain" onChange={(e) => readFile(e.target.files?.[0])} />
         </label>
       </div>
-      <textarea className="admin-textarea" rows={8} value={text} placeholder={IMPORT_TEMPLATE} onChange={(e) => { setText(e.target.value); setPreview(null); }} data-block-keys />
-      <label className="check"><input type="checkbox" checked={updateExisting} onChange={(e) => { setUpdateExisting(e.target.checked); setPreview(null); }} /> 已存在的账号：更新姓名、班级、专业（不改密码）</label>
+      <textarea className="admin-textarea" rows={8} value={text} placeholder={meta.template} onChange={(e) => { setText(e.target.value); setPreview(null); }} data-block-keys />
+      <label className="check"><input type="checkbox" checked={updateExisting} onChange={(e) => { setUpdateExisting(e.target.checked); setPreview(null); }} /> 已存在的账号：更新姓名、{meta.col3}、{meta.col4}（不改密码）</label>
       <div className="admin-actions">
         <button type="button" className="ghost" disabled={busy || !text.trim()} onClick={() => void run(true)}>预览检查</button>
         <button type="button" className="primary" disabled={busy || !preview || preview.summary.create + preview.summary.update === 0} onClick={() => void run(false)}>
@@ -258,7 +264,7 @@ function ImportTab() {
           <button
             type="button"
             className="primary"
-            onClick={() => downloadCsv(`初始密码-${stamp()}.csv`, [['账号', '姓名', '角色', '初始密码'], ...done.credentials!.map((c) => [c.username, c.name, ROLE_LABEL[c.role] ?? c.role, c.password])])}
+            onClick={() => downloadCsv(`${meta.label}初始密码-${stamp()}.csv`, [[meta.id, '姓名', '初始密码'], ...done.credentials!.map((c) => [c.username, c.name, c.password])])}
           >下载初始密码 CSV</button>
         </div>
       ) : null}
@@ -271,11 +277,11 @@ function ImportTab() {
           </p>
           <div className="table-wrap">
             <table className="admin-table">
-              <thead><tr><th>行</th><th>账号</th><th>姓名</th><th>角色</th><th>班级</th><th>专业</th><th>处理</th></tr></thead>
+              <thead><tr><th>行</th><th>{meta.id}</th><th>姓名</th><th>{meta.col3}</th><th>{meta.col4}</th><th>处理</th></tr></thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={`${row.line}-${row.username}`} className={`st-${row.status}`}>
-                    <td>{row.line}</td><td>{row.username}</td><td>{row.name}</td><td>{ROLE_LABEL[row.role] ?? row.role}</td><td>{row.className}</td><td>{row.major}</td>
+                    <td>{row.line}</td><td>{row.username}</td><td>{row.name}</td><td>{row.col3}</td><td>{row.col4}</td>
                     <td>{{ create: '新建', update: '更新', skip: '跳过', error: '错误' }[row.status]}{row.message ? `：${row.message}` : ''}</td>
                   </tr>
                 ))}
@@ -320,7 +326,7 @@ function UsersTab() {
           <option value="teacher">教师</option>
           <option value="admin">管理员</option>
         </select>
-        <input value={q} placeholder="账号 / 姓名 / 班级" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} aria-label="搜索" data-block-keys />
+        <input value={q} placeholder="账号 / 姓名 / 班级 / 院系" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void load(); }} aria-label="搜索" data-block-keys />
         <button type="button" className="ghost small" onClick={() => void load()}>查询</button>
       </div>
       {issued ? (
@@ -334,15 +340,15 @@ function UsersTab() {
       {error ? <p className="error-text" role="alert">{error}</p> : null}
       <div className="table-wrap">
         <table className="admin-table">
-          <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>班级</th><th>专业</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead>
+          <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>班级 / 职称</th><th>专业 / 院系</th><th>状态</th><th>最近登录</th><th>操作</th></tr></thead>
           <tbody>
             {users.map((user) => (
               <tr key={user.id} className={user.disabled ? 'st-skip' : ''}>
                 <td>{user.username}</td>
                 <td>{user.name ?? ''}</td>
                 <td>{ROLE_LABEL[user.role]}</td>
-                <td>{user.className ?? ''}</td>
-                <td>{user.major ?? ''}</td>
+                <td>{user.role === 'student' ? user.className ?? '' : user.title ?? ''}</td>
+                <td>{user.role === 'student' ? user.major ?? '' : user.department ?? ''}</td>
                 <td>{user.external ? '实验空间账号' : user.disabled ? '已停用' : user.mustChangePassword ? '待改初始密码' : '正常'}</td>
                 <td>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('zh-CN') : '—'}</td>
                 <td className="row-actions">
@@ -367,12 +373,15 @@ function UsersTab() {
 
 function ResultsTab() {
   const [className, setClassName] = useState('');
+  const [courses, setCourses] = useState<CourseItem[]>([]);
+  const [courseId, setCourseId] = useState<number | null>(null);
+  useEffect(() => { api.admin.courses().then((data) => setCourses(data.courses)).catch(() => setCourses([])); }, []);
   const [data, setData] = useState<{ bankVersion: string; totalSteps: number; classes: string[]; results: ResultRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<{ sessionId: number; grade: string; comment: string } | null>(null);
-  const load = () => api.admin.results(className).then(setData).catch((err) => setError(errorText(err)));
-  useEffect(() => { void load(); }, [className]); // eslint-disable-line react-hooks/exhaustive-deps
+  const load = () => api.admin.results(className, courseId).then(setData).catch((err) => setError(errorText(err)));
+  useEffect(() => { void load(); }, [className, courseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveReview = async () => {
     if (!editing) return;
@@ -392,6 +401,10 @@ function ResultsTab() {
   return (
     <div className="admin-section">
       <div className="admin-actions">
+        <select value={courseId ?? ''} onChange={(e) => { setCourseId(e.target.value ? Number(e.target.value) : null); setClassName(''); }} aria-label="课程">
+          <option value="">{courses.length ? '全部课程' : '本学期暂无课程'}</option>
+          {courses.map((course) => <option key={course.id} value={course.id}>{course.name}（{course.code}）</option>)}
+        </select>
         <select value={className} onChange={(e) => setClassName(e.target.value)} aria-label="班级">
           <option value="">全部班级</option>
           {data?.classes.map((item) => <option key={item}>{item}</option>)}
@@ -440,6 +453,155 @@ function ResultsTab() {
                 <td>{[row.source === 'ilab' ? '实验空间' : row.source === 'synthetic' ? '合成演示' : '', row.legacySteps ? `含旧版题库 ${row.legacySteps} 步` : ''].filter(Boolean).join('；')}</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- 学期与课程 ----------------
+
+const EMPTY_COURSE = (term: Term): CourseInput => ({ code: '', name: '', category: '', termStartYear: term.startYear, termNo: term.termNo, totalHours: '', credits: '', teacherIds: [], classes: '' });
+
+function CoursesTab({ editable }: { editable: boolean }) {
+  const [term, setTerm] = useState<Term>(defaultTerm());
+  const [current, setCurrent] = useState<Term | null>(null);
+  const [courses, setCourses] = useState<CourseItem[]>([]);
+  const [teachers, setTeachers] = useState<AdminUser[]>([]);
+  const [form, setForm] = useState<CourseInput | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const years = useMemo(() => {
+    const now = new Date().getFullYear();
+    return Array.from({ length: 8 }, (_, index) => now - 5 + index);
+  }, []);
+
+  const load = (target: Term) => api.admin.courses(target).then((data) => setCourses(data.courses)).catch((err) => setMessage({ tone: 'error', text: errorText(err) }));
+  useEffect(() => {
+    api.admin.term().then((data) => { setCurrent(data.term); setTerm(data.term); void load(data.term); }).catch((err) => setMessage({ tone: 'error', text: errorText(err) }));
+    if (editable) api.admin.users('teacher', '').then((data) => setTeachers(data.users.filter((user) => !user.disabled))).catch(() => undefined);
+  }, [editable]);
+
+  const changeTerm = (next: Term) => {
+    setTerm(next);
+    setForm(null);
+    void load(next);
+  };
+
+  const setCurrentTerm = async () => {
+    try {
+      const data = await api.admin.saveTerm(term);
+      setCurrent(data.term);
+      setMessage({ tone: 'ok', text: `当前学期已设为 ${data.label}` });
+    } catch (err) {
+      setMessage({ tone: 'error', text: errorText(err) });
+    }
+  };
+
+  const save = async () => {
+    if (!form) return;
+    try {
+      await api.admin.saveCourse(editingId, form);
+      setMessage({ tone: 'ok', text: editingId ? '课程已更新' : '课程已创建' });
+      setForm(null);
+      setEditingId(null);
+      await load(term);
+    } catch (err) {
+      setMessage({ tone: 'error', text: errorText(err) });
+    }
+  };
+
+  const edit = (course: CourseItem) => {
+    setEditingId(course.id);
+    setForm({ code: course.code, name: course.name, category: course.category, termStartYear: course.termStartYear, termNo: course.termNo, totalHours: course.totalHours ?? '', credits: course.credits ?? '', teacherIds: course.teachers.map((t) => t.id), classes: course.classes.join('，') });
+  };
+
+  const remove = async (course: CourseItem) => {
+    if (!window.confirm(`删除课程“${course.name}（${course.code}）”？学生与教师账号不受影响。`)) return;
+    try {
+      await api.admin.deleteCourse(course.id);
+      await load(term);
+    } catch (err) {
+      setMessage({ tone: 'error', text: errorText(err) });
+    }
+  };
+
+  const set = (patch: Partial<CourseInput>) => setForm((value) => (value ? { ...value, ...patch } : value));
+
+  return (
+    <div className="admin-section">
+      <div className="admin-actions">
+        <label className="field-inline">学年
+          <select value={term.startYear} onChange={(e) => changeTerm({ ...term, startYear: Number(e.target.value) })}>
+            {years.map((year) => <option key={year} value={year}>{year}—{year + 1}</option>)}
+          </select>
+        </label>
+        <label className="field-inline">学期
+          <select value={term.termNo} onChange={(e) => changeTerm({ ...term, termNo: Number(e.target.value) as 1 | 2 })}>
+            <option value={1}>第一学期</option>
+            <option value={2}>第二学期</option>
+          </select>
+        </label>
+        {editable ? (
+          <button type="button" className="ghost small" disabled={current?.startYear === term.startYear && current?.termNo === term.termNo} onClick={() => void setCurrentTerm()}>设为当前学期</button>
+        ) : null}
+        <span className="muted small">当前学期：{current ? termLabel(current) : '—'}</span>
+      </div>
+      <p className="muted small">课程、任课教师与教学班三者关联：学生按导入时填写的班级自动归入教学班；教师在“学生成绩”中只能看到自己任课教学班的学生。</p>
+      {message ? <p className={message.tone === 'ok' ? 'ok-text' : 'error-text'} role="status">{message.text}</p> : null}
+      {editable && !form ? <div className="admin-actions"><button type="button" className="primary" onClick={() => { setEditingId(null); setForm(EMPTY_COURSE(term)); }}>新建课程</button></div> : null}
+      {form ? (
+        <div className="course-form">
+          <div className="form-grid">
+            <div className="field"><label htmlFor="c-code">课程序号</label><input id="c-code" value={form.code} placeholder="如 25224902.03" onChange={(e) => set({ code: e.target.value })} /></div>
+            <div className="field"><label htmlFor="c-name">课程名称</label><input id="c-name" value={form.name} onChange={(e) => set({ name: e.target.value })} /></div>
+            <div className="field"><label htmlFor="c-cat">课程类别</label><input id="c-cat" value={form.category} placeholder="如 学科基础选修课" onChange={(e) => set({ category: e.target.value })} /></div>
+            <div className="field"><label htmlFor="c-term">学期</label>
+              <select id="c-term" value={`${form.termStartYear}-${form.termNo}`} onChange={(e) => { const [y, n] = e.target.value.split('-').map(Number); set({ termStartYear: y!, termNo: n as 1 | 2 }); }}>
+                {years.flatMap((year) => [1, 2].map((no) => <option key={`${year}-${no}`} value={`${year}-${no}`}>{termLabel({ startYear: year, termNo: no as 1 | 2 })}</option>))}
+              </select>
+            </div>
+            <div className="field"><label htmlFor="c-hours">总课时</label><input id="c-hours" type="number" min={0} value={form.totalHours ?? ''} onChange={(e) => set({ totalHours: e.target.value === '' ? '' : Number(e.target.value) })} /></div>
+            <div className="field"><label htmlFor="c-credits">学分</label><input id="c-credits" type="number" min={0} step={0.5} value={form.credits ?? ''} onChange={(e) => set({ credits: e.target.value === '' ? '' : Number(e.target.value) })} /></div>
+            <div className="field wide"><label htmlFor="c-classes">教学班（多个用逗号或顿号分隔，须与学生导入时的班级名称一致）</label>
+              <textarea id="c-classes" className="admin-textarea" rows={2} value={form.classes} placeholder="2025级人工智能1班，2025级人工智能2班" onChange={(e) => set({ classes: e.target.value })} />
+            </div>
+            <div className="field wide"><span className="field-label">任课教师（可多选）</span>
+              <div className="teacher-picks">
+                {teachers.length ? teachers.map((teacher) => (
+                  <label key={teacher.id} className="check">
+                    <input type="checkbox" checked={form.teacherIds.includes(teacher.id)} onChange={(e) => set({ teacherIds: e.target.checked ? [...form.teacherIds, teacher.id] : form.teacherIds.filter((id) => id !== teacher.id) })} />
+                    {teacher.name ?? teacher.username}（{teacher.username}）
+                  </label>
+                )) : <span className="muted small">尚未导入教师，请先在“教师导入”中导入。</span>}
+              </div>
+            </div>
+          </div>
+          <div className="admin-actions">
+            <button type="button" className="primary" onClick={() => void save()}>{editingId ? '保存修改' : '创建课程'}</button>
+            <button type="button" className="ghost" onClick={() => { setForm(null); setEditingId(null); }}>取消</button>
+          </div>
+        </div>
+      ) : null}
+      <div className="table-wrap">
+        <table className="admin-table">
+          <thead><tr><th>课程序号</th><th>课程名称</th><th>类别</th><th>教学班</th><th>任课教师</th><th>总课时</th><th>学分</th><th>已导入学生</th>{editable ? <th>操作</th> : null}</tr></thead>
+          <tbody>
+            {courses.length ? courses.map((course) => (
+              <tr key={course.id}>
+                <td>{course.code}</td><td>{course.name}</td><td>{course.category}</td>
+                <td className="wrap">{course.classes.join('、')}</td>
+                <td>{course.teachers.map((t) => t.name).join('、')}</td>
+                <td>{course.totalHours ?? '—'}</td><td>{course.credits ?? '—'}</td><td>{course.students}</td>
+                {editable ? (
+                  <td className="row-actions">
+                    <button type="button" className="ghost small" onClick={() => edit(course)}>编辑</button>
+                    <button type="button" className="ghost small" onClick={() => void remove(course)}>删除</button>
+                  </td>
+                ) : null}
+              </tr>
+            )) : <tr><td colSpan={editable ? 9 : 8} className="muted">{termLabel(term)}暂无课程</td></tr>}
           </tbody>
         </table>
       </div>
@@ -506,7 +668,7 @@ function AuditTab() {
 
 // ---------------- 外框 ----------------
 
-type Tab = 'model' | 'import' | 'users' | 'results' | 'audit';
+type Tab = 'courses' | 'students' | 'teachers' | 'model' | 'users' | 'results' | 'audit';
 
 export function Admin() {
   const user = useSessionStore((state) => state.user);
@@ -514,8 +676,8 @@ export function Admin() {
   const logout = useSessionStore((state) => state.logout);
   const isAdmin = user?.role === 'admin';
   const tabs: Array<{ id: Tab; label: string }> = isAdmin
-    ? [{ id: 'model', label: '大模型配置' }, { id: 'import', label: '师生导入' }, { id: 'users', label: '账号管理' }, { id: 'results', label: '学生成绩' }, { id: 'audit', label: 'AI 审计与伦理' }]
-    : [{ id: 'results', label: '学生成绩' }];
+    ? [{ id: 'courses', label: '学期与课程' }, { id: 'students', label: '学生导入' }, { id: 'teachers', label: '教师导入' }, { id: 'users', label: '账号管理' }, { id: 'results', label: '学生成绩' }, { id: 'model', label: '大模型配置' }, { id: 'audit', label: 'AI 审计与伦理' }]
+    : [{ id: 'courses', label: '我的课程' }, { id: 'results', label: '学生成绩' }];
   const [tab, setTab] = useState<Tab>(tabs[0]!.id);
   const [changing, setChanging] = useState(false);
 
@@ -539,7 +701,9 @@ export function Admin() {
       </nav>
       <main className="admin-main">
         {tab === 'model' ? <ModelTab /> : null}
-        {tab === 'import' ? <ImportTab /> : null}
+        {tab === 'courses' ? <CoursesTab editable={isAdmin} /> : null}
+        {tab === 'students' ? <ImportTab key="students" kind="student" /> : null}
+        {tab === 'teachers' ? <ImportTab key="teachers" kind="teacher" /> : null}
         {tab === 'users' ? <UsersTab /> : null}
         {tab === 'results' ? <ResultsTab /> : null}
         {tab === 'audit' ? <AuditTab /> : null}
