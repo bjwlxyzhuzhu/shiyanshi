@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/data
+.git
+.github
+.env
+.env.*
+!.env.example
+*.zip
+*.log
+claude-webgl-design-kit
+design-proposals
+ilab-integration-kit-*
+industry-lab-safety-kit-*
+docs
