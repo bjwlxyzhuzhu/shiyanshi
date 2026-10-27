@@ -3,7 +3,7 @@ import PDFDocument from 'pdfkit';
 
 /**
  * 实验报告 PDF：用 pdfkit 嵌入中文字体子集，任何阅读器都能正确显示中文。
- * 字体由服务器提供（ILAB_REPORT_FONT_PATH，集合字体需同时设置 ILAB_REPORT_FONT_FAMILY）；
+ * 字体由服务器提供（ILAB_REPORT_FONT_PATH；.ttc 集合字体需同时用 ILAB_REPORT_FONT_FAMILY 指定其中一款的 PostScript 名，如 NotoSansCJKsc-Regular）；
  * 找不到可嵌入字体时直接报错，不生成“中文显示为空白”的文件。
  */
 export interface PdfLine {
@@ -15,15 +15,16 @@ export interface PdfLine {
 
 interface FontChoice {
   path: string;
+  /** .ttc 集合中要用的字体的 PostScript 名（fontkit 按此匹配，不是显示名） */
   family?: string;
 }
 
 /** 常见可嵌入中文字体位置；生产服务器建议安装 Noto Sans CJK（SIL OFL）并显式配置 */
 const CANDIDATES: FontChoice[] = [
-  { path: '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', family: 'Noto Sans CJK SC' },
-  { path: '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc', family: 'Noto Sans CJK SC' },
-  { path: '/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc', family: 'Noto Sans CJK SC' },
-  { path: '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc', family: 'WenQuanYi Micro Hei' },
+  { path: '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', family: 'NotoSansCJKsc-Regular' },
+  { path: '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc', family: 'NotoSansCJKsc-Regular' },
+  { path: '/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc', family: 'NotoSansCJKsc-Regular' },
+  { path: '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc', family: 'WenQuanYiMicroHei' },
   { path: 'C:/Windows/Fonts/simhei.ttf' },
   { path: 'C:/Windows/Fonts/Deng.ttf' }
 ];
