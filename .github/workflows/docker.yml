@@ -27,7 +27,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
-      - run: pnpm -r test
+      - run: pnpm -r --no-bail test -- --reporter=default --reporter=github-actions
 
   image:
     needs: test
