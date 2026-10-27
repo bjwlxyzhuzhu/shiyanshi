@@ -17,12 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # pnpm 版本取自 package.json 的 packageManager 字段；须在 setup-node 之前安装
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          cache: pnpm
       - name: 安装中文字体（PDF 实验报告测试需要）
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
-      - run: npm install -g pnpm@12.8.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
       - run: pnpm -r test
