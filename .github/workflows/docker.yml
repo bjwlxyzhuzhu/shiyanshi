@@ -16,10 +16,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
+      - name: 安装中文字体（PDF 实验报告测试需要）
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - run: npm install -g pnpm@12.8.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
@@ -32,7 +34,7 @@ jobs:
       matrix:
         component: [server, web]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - name: 登录 GHCR
         if: github.event_name != 'pull_request'
