@@ -1,8 +1,8 @@
 # 部署：docker compose up -d，然后浏览器访问 http://服务器地址:8080
-# 镜像由 GitHub Actions 构建并推送到 GHCR；OWNER 换成仓库所有者（小写）
+# 镜像由 GitHub Actions 构建并推送到 GHCR（默认 bjwlxyzhuzhu）
 services:
   server:
-    image: ghcr.io/${OWNER:-owner}/shiyanshi-server:latest
+    image: ghcr.io/${OWNER:-bjwlxyzhuzhu}/shiyanshi-server:latest
     restart: unless-stopped
     env_file:
       - path: .env
@@ -11,7 +11,7 @@ services:
       - zhian-data:/app/apps/server/data
 
   web:
-    image: ghcr.io/${OWNER:-owner}/shiyanshi-web:latest
+    image: ghcr.io/${OWNER:-bjwlxyzhuzhu}/shiyanshi-web:latest
     restart: unless-stopped
     depends_on:
       - server
