@@ -27,7 +27,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
-      - run: pnpm -r --no-bail test -- --reporter=default --reporter=github-actions
+      - name: 运行测试
+        run: |
+          set -o pipefail
+          pnpm -r --no-bail test 2>&1 | tee test.log
+      - name: 失败摘要（写入注释，便于不登录查看）
+        if: failure()
+        run: |
+          msg=$(sed 's/\x1b\[[0-9;]*m//g' test.log | grep -E -B2 -A12 "FAIL|Error|×|AssertionError|ERR_" | head -120 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
+          echo "::error title=测试失败摘要::${msg}"
 
   image:
     needs: test
